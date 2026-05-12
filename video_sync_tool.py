@@ -153,8 +153,11 @@ class ZoomPanCanvas(tk.Canvas):
 class VideoSyncTool:
     def __init__(self, root):
         self.root = root
-        self.root.title("多视角视频时间同步与抽帧工具 (支持鼠标滚轮缩放拖拽)")
-        self.root.geometry("900x700")
+        self.root.title("多视角视频时间同步与抽帧工具")
+        self.root.geometry("950x750")
+        
+        self.setup_styles()
+        self.root.configure(bg="#F3F3F3")
         
         self.video1_path = tk.StringVar()
         self.video2_path = tk.StringVar()
@@ -174,61 +177,109 @@ class VideoSyncTool:
         
         self.setup_ui()
         self.update_ui_states()
+
+    def setup_styles(self):
+        style = ttk.Style(self.root)
+        try:
+            style.theme_use('clam')
+        except:
+            pass
+            
+        default_font = ("Microsoft YaHei", 9)
+        bold_font = ("Microsoft YaHei", 9, "bold")
+        title_font = ("Microsoft YaHei", 10, "bold")
         
+        bg_color = "#F3F3F3"
+        card_bg = "#FFFFFF"
+        text_color = "#333333"
+        
+        style.configure(".", font=default_font, background=bg_color, foreground=text_color)
+        
+        # 卡片(LabelFrame)样式
+        style.configure("Card.TLabelframe", background=card_bg, bordercolor="#E0E0E0", borderwidth=1, relief="solid")
+        style.configure("Card.TLabelframe.Label", font=title_font, background=bg_color, foreground="#111111")
+        
+        # 卡片内部组件样式
+        style.configure("Card.TFrame", background=card_bg)
+        style.configure("Card.TLabel", background=card_bg, foreground=text_color)
+        
+        # 进度条框架
+        style.configure("Progress.TFrame", background=bg_color)
+        
+        # 按钮通用样式
+        style.configure("TButton", font=default_font, padding=6, relief="flat", background="#E1E1E1", borderwidth=0)
+        style.map("TButton", 
+                  background=[("active", "#D4D4D4"), ("disabled", "#F0F0F0")], 
+                  foreground=[("disabled", "#A0A0A0")])
+                  
+        # 强调按钮样式 (绿色)
+        style.configure("Accent.TButton", font=bold_font, background="#107C10", foreground="white")
+        style.map("Accent.TButton", 
+                  background=[("active", "#0B5A0B"), ("disabled", "#A0C8A0")], 
+                  foreground=[("disabled", "#FFFFFF")])
+                  
+        # 停止按钮样式 (红色)
+        style.configure("Stop.TButton", font=bold_font, background="#D13438", foreground="white")
+        style.map("Stop.TButton", 
+                  background=[("active", "#B12C2F"), ("disabled", "#F0A8A9")], 
+                  foreground=[("disabled", "#FFFFFF")])
+                  
+        # 提示标签
+        style.configure("Hint.TLabel", font=bold_font, foreground="#005A9E", background=bg_color)
+
     def create_time_input(self, parent, row, col, h_var, m_var, s_var):
-        f = ttk.Frame(parent)
+        f = ttk.Frame(parent, style="Card.TFrame")
         f.grid(row=row, column=col, padx=5, pady=5, sticky=tk.W)
         hours = [f"{i:02d}" for i in range(24)]
         mins = [f"{i:02d}" for i in range(60)]
         ttk.Spinbox(f, values=hours, textvariable=h_var, width=3, state="readonly", wrap=True).pack(side=tk.LEFT)
-        ttk.Label(f, text=":").pack(side=tk.LEFT, padx=2)
+        ttk.Label(f, text=":", style="Card.TLabel").pack(side=tk.LEFT, padx=2)
         ttk.Spinbox(f, values=mins, textvariable=m_var, width=3, state="readonly", wrap=True).pack(side=tk.LEFT)
-        ttk.Label(f, text=":").pack(side=tk.LEFT, padx=2)
+        ttk.Label(f, text=":", style="Card.TLabel").pack(side=tk.LEFT, padx=2)
         ttk.Spinbox(f, values=mins, textvariable=s_var, width=3, state="readonly", wrap=True).pack(side=tk.LEFT)
 
     def setup_ui(self):
         # 提示区域
         frame_hint = ttk.Frame(self.root, padding=(10, 5))
         frame_hint.pack(fill=tk.X)
-        hint_label = tk.Label(frame_hint, textvariable=self.hint_var, 
-                              fg="blue", font=("", 10, "bold"), anchor="w", justify=tk.LEFT)
+        hint_label = ttk.Label(frame_hint, textvariable=self.hint_var, style="Hint.TLabel")
         hint_label.pack(fill=tk.X)
 
         # 顶部：选择视频区域
-        frame_top = ttk.LabelFrame(self.root, text="步骤 1：选择视频并对齐时间", padding=10)
+        frame_top = ttk.LabelFrame(self.root, text=" 步骤 1：选择视频并对齐时间 ", padding=10, style="Card.TLabelframe")
         frame_top.pack(fill=tk.X, padx=10, pady=5)
         
-        self.btn_v1 = tk.Button(frame_top, text="选择视频 1 (前视角)", command=lambda: self.load_video(1), cursor="hand2")
-        self.btn_v1.grid(row=0, column=0, padx=5, pady=5)
-        ttk.Label(frame_top, textvariable=self.video1_path, width=40).grid(row=0, column=1, padx=5, pady=5)
-        ttk.Label(frame_top, text="第一帧时间 (时:分:秒):").grid(row=0, column=2, padx=5, pady=5)
+        self.btn_v1 = ttk.Button(frame_top, text="选择视频 1 (前视角)", command=lambda: self.load_video(1), cursor="hand2")
+        self.btn_v1.grid(row=0, column=0, padx=10, pady=8)
+        ttk.Label(frame_top, textvariable=self.video1_path, width=40, style="Card.TLabel", foreground="#555555").grid(row=0, column=1, padx=5, pady=8)
+        ttk.Label(frame_top, text="第一帧时间 (时:分:秒):", style="Card.TLabel").grid(row=0, column=2, padx=10, pady=8, sticky=tk.E)
         self.create_time_input(frame_top, 0, 3, self.h1_var, self.m1_var, self.s1_var)
         
-        self.btn_v2 = tk.Button(frame_top, text="选择视频 2 (后视角)", command=lambda: self.load_video(2), cursor="hand2")
-        self.btn_v2.grid(row=1, column=0, padx=5, pady=5)
-        ttk.Label(frame_top, textvariable=self.video2_path, width=40).grid(row=1, column=1, padx=5, pady=5)
-        ttk.Label(frame_top, text="第一帧时间 (时:分:秒):").grid(row=1, column=2, padx=5, pady=5)
+        self.btn_v2 = ttk.Button(frame_top, text="选择视频 2 (后视角)", command=lambda: self.load_video(2), cursor="hand2")
+        self.btn_v2.grid(row=1, column=0, padx=10, pady=8)
+        ttk.Label(frame_top, textvariable=self.video2_path, width=40, style="Card.TLabel", foreground="#555555").grid(row=1, column=1, padx=5, pady=8)
+        ttk.Label(frame_top, text="第一帧时间 (时:分:秒):", style="Card.TLabel").grid(row=1, column=2, padx=10, pady=8, sticky=tk.E)
         self.create_time_input(frame_top, 1, 3, self.h2_var, self.m2_var, self.s2_var)
         
-        # 中间：图像预览区域 (替换为自定义画布)
+        # 中间：图像预览区域
         frame_mid = ttk.Frame(self.root, padding=10)
         frame_mid.pack(fill=tk.BOTH, expand=True)
         
-        self.img1_canvas = ZoomPanCanvas(frame_mid, bg="gray")
-        self.img1_canvas.pack(side=tk.LEFT, padx=10, expand=True, fill=tk.BOTH)
+        self.img1_canvas = ZoomPanCanvas(frame_mid, bg="#E8E8E8", highlightthickness=1, highlightbackground="#CCCCCC")
+        self.img1_canvas.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill=tk.BOTH)
         
-        self.img2_canvas = ZoomPanCanvas(frame_mid, bg="gray")
-        self.img2_canvas.pack(side=tk.RIGHT, padx=10, expand=True, fill=tk.BOTH)
+        self.img2_canvas = ZoomPanCanvas(frame_mid, bg="#E8E8E8", highlightthickness=1, highlightbackground="#CCCCCC")
+        self.img2_canvas.pack(side=tk.RIGHT, padx=(5, 0), expand=True, fill=tk.BOTH)
         
         # 底部：输出与控制区域
-        frame_bottom = ttk.LabelFrame(self.root, text="步骤 2 & 3：选择输出与执行", padding=10)
+        frame_bottom = ttk.LabelFrame(self.root, text=" 步骤 2 & 3：选择输出与执行 ", padding=10, style="Card.TLabelframe")
         frame_bottom.pack(fill=tk.X, padx=10, pady=5)
         
-        self.btn_select_out = tk.Button(frame_bottom, text="选择输出目录", command=self.select_output_dir, state=tk.DISABLED, cursor="hand2")
-        self.btn_select_out.grid(row=0, column=0, padx=5, pady=5)
-        ttk.Label(frame_bottom, textvariable=self.output_dir, width=60).grid(row=0, column=1, padx=5, pady=5)
+        self.btn_select_out = ttk.Button(frame_bottom, text="选择输出目录", command=self.select_output_dir, state=tk.DISABLED, cursor="hand2")
+        self.btn_select_out.grid(row=0, column=0, padx=10, pady=8)
+        ttk.Label(frame_bottom, textvariable=self.output_dir, width=60, style="Card.TLabel", foreground="#555555").grid(row=0, column=1, padx=5, pady=8, sticky=tk.W)
         
-        ttk.Label(frame_bottom, text="输出分辨率限制:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.E)
+        ttk.Label(frame_bottom, text="输出分辨率限制:", style="Card.TLabel").grid(row=1, column=0, padx=10, pady=8, sticky=tk.E)
         self.resolutions = {
             "原分辨率 (Original)": None,
             "1080p (最大 1920x1080)": (1920, 1080),
@@ -237,41 +288,42 @@ class VideoSyncTool:
         }
         self.resolution_var = tk.StringVar(value="原分辨率 (Original)")
         self.res_cb = ttk.Combobox(frame_bottom, textvariable=self.resolution_var, values=["请先加载视频"], state="disabled", width=30)
-        self.res_cb.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+        self.res_cb.grid(row=1, column=1, padx=5, pady=8, sticky=tk.W)
         
         # 按钮容器
-        frame_btns = ttk.Frame(frame_bottom)
-        frame_btns.grid(row=2, column=0, columnspan=2, pady=10)
+        frame_btns = ttk.Frame(frame_bottom, style="Card.TFrame")
+        frame_btns.grid(row=2, column=0, columnspan=2, pady=15)
         
-        self.start_btn = tk.Button(frame_btns, text="▶ 开始同步抽帧", command=self.start_processing, state=tk.DISABLED, cursor="hand2")
+        self.start_btn = ttk.Button(frame_btns, text="▶ 开始同步抽帧", command=self.start_processing, state=tk.DISABLED, cursor="hand2")
         self.start_btn.pack(side=tk.LEFT, padx=10)
         
-        self.stop_btn = tk.Button(frame_btns, text="⏹ 停止", command=self.stop_processing, state=tk.DISABLED, cursor="hand2")
+        self.stop_btn = ttk.Button(frame_btns, text="⏹ 停止", command=self.stop_processing, state=tk.DISABLED, cursor="hand2", style="Stop.TButton")
         self.stop_btn.pack(side=tk.LEFT, padx=10)
         
         # 视频分辨率记录
         self.video_resolutions = {1: None, 2: None}
         
         # 进度条区域
-        frame_progress = ttk.Frame(frame_bottom)
-        frame_progress.grid(row=3, column=0, columnspan=2, sticky="ew", pady=5)
+        frame_progress = ttk.Frame(self.root, padding=(10, 0, 10, 10), style="Progress.TFrame")
+        frame_progress.pack(fill=tk.X)
         
-        ttk.Label(frame_progress, text="视频 1 进度:").grid(row=0, column=0, padx=5, sticky=tk.W)
+        ttk.Label(frame_progress, text="视频 1 进度:").grid(row=0, column=0, padx=5, pady=2, sticky=tk.W)
         self.progress1 = ttk.Progressbar(frame_progress, orient=tk.HORIZONTAL, mode='determinate')
         self.progress1.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
         self.eta_label1 = ttk.Label(frame_progress, text="剩余时间: --:--", width=15)
-        self.eta_label1.grid(row=0, column=2, padx=5, sticky=tk.E)
+        self.eta_label1.grid(row=0, column=2, padx=5, pady=2, sticky=tk.E)
         frame_progress.columnconfigure(1, weight=1)
         
-        ttk.Label(frame_progress, text="视频 2 进度:").grid(row=1, column=0, padx=5, sticky=tk.W)
+        ttk.Label(frame_progress, text="视频 2 进度:").grid(row=1, column=0, padx=5, pady=2, sticky=tk.W)
         self.progress2 = ttk.Progressbar(frame_progress, orient=tk.HORIZONTAL, mode='determinate')
         self.progress2.grid(row=1, column=1, sticky="ew", padx=5, pady=2)
         self.eta_label2 = ttk.Label(frame_progress, text="剩余时间: --:--", width=15)
-        self.eta_label2.grid(row=1, column=2, padx=5, sticky=tk.E)
+        self.eta_label2.grid(row=1, column=2, padx=5, pady=2, sticky=tk.E)
         
         # 日志输出区域
-        self.log_text = tk.Text(self.root, height=10, state=tk.NORMAL)
-        self.log_text.pack(fill=tk.BOTH, padx=10, pady=10, expand=True)
+        self.log_text = tk.Text(self.root, height=8, state=tk.NORMAL, font=("Consolas", 9), 
+                                bg="#1E1E1E", fg="#D4D4D4", relief="flat", padx=10, pady=10)
+        self.log_text.pack(fill=tk.BOTH, padx=10, pady=(0, 10), expand=True)
         self.log("工具已启动。支持鼠标放在画面上滚轮缩放，左键按住拖拽。")
         
     def check_chinese_filename(self, filepath):
@@ -281,11 +333,11 @@ class VideoSyncTool:
                 return True
         return False
         
-    def set_btn_accent(self, btn, is_accent):
+    def set_btn_accent(self, btn, is_accent, btn_type="Accent"):
         if is_accent:
-            btn.config(bg="#4CAF50", fg="white", font=("", 9, "bold"), relief=tk.RAISED)
+            btn.config(style=f"{btn_type}.TButton")
         else:
-            btn.config(bg="#f0f0f0", fg="black", font=("", 9, ""), relief=tk.GROOVE)
+            btn.config(style="TButton")
 
     def update_ui_states(self):
         v1_loaded = bool(self.video1_path.get())
@@ -294,7 +346,7 @@ class VideoSyncTool:
 
         # 提示显示
         if v1_loaded or v2_loaded:
-            self.hint_var.set("💡 提示：将鼠标放在下方视频画面上，滚动滚轮可放大图片，按住左键可拖拽。放大后能更清晰地看准监控时间！")
+            self.hint_var.set("💡 提示：将鼠标悬停在下方视频画面上，滚动滚轮可缩放图片，按住左键可自由拖拽！")
         else:
             self.hint_var.set("")
 
