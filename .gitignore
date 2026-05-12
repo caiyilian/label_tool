@@ -3,11 +3,17 @@
 *.avi
 *.mov
 *.mkv
-
+*.spec
+*.exe
 # 忽略输出的图片文件夹
 outputs/
 forward/
 backward/
+
+# 打包exe后的文件夹
+dist/
+build/
+tcl_tk_libs/
 
 # Python 缓存和虚拟环境
 __pycache__/
@@ -23,6 +29,3 @@ ENV/
 .idea/
 *.swp
 *.suo
-
-# exe文件
-ffmpeg.exe

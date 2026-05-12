@@ -1,4 +1,21 @@
 import os
+import sys
+
+# 解决 Tcl/Tk 版本冲突问题：强制指定使用我们自己打包的正确库
+if getattr(sys, 'frozen', False):
+    app_root = sys._MEIPASS
+else:
+    app_root = os.path.dirname(os.path.abspath(__file__))
+
+tcl_lib_path = os.path.join(app_root, "tcl_tk_libs", "tcl")
+tk_lib_path = os.path.join(app_root, "tcl_tk_libs", "tk")
+
+if os.path.exists(tcl_lib_path) and os.path.exists(tk_lib_path):
+    os.environ["TCL_LIBRARY"] = tcl_lib_path
+    os.environ["TK_LIBRARY"] = tk_lib_path
+
+import tkinter as tk
+from tkinter import filedialog
 import cv2
 import time
 import threading
@@ -8,15 +25,25 @@ import glob
 import base64
 import webbrowser
 import logging
+import queue
+import urllib.request
 from flask import Flask, render_template, request, jsonify
-import tkinter as tk
-from tkinter import filedialog
 
 # 关闭 flask 的默认请求日志输出
 log_flask = logging.getLogger('werkzeug')
 log_flask.disabled = True
 
-app = Flask(__name__)
+# 适配 PyInstaller 打包后的 templates 目录路径
+if getattr(sys, 'frozen', False):
+    template_folder = os.path.join(sys._MEIPASS, 'templates')
+    app = Flask(__name__, template_folder=template_folder)
+else:
+    app = Flask(__name__)
+
+# 全局队列和事件，用于跨线程调度 Tkinter 对话框
+dialog_queue = queue.Queue()
+dialog_result = {}
+dialog_event = threading.Event()
 
 state = {
     "is_processing": False,
@@ -41,14 +68,10 @@ def index():
 
 @app.route('/api/select_video', methods=['POST'])
 def select_video():
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes('-topmost', True)
-    filepath = filedialog.askopenfilename(
-        title="选择视频",
-        filetypes=[("Video Files", "*.mp4 *.avi *.mov *.mkv")]
-    )
-    root.destroy()
+    dialog_event.clear()
+    dialog_queue.put({'type': 'video'})
+    dialog_event.wait()
+    filepath = dialog_result.get('filepath', '')
     
     if not filepath:
         return jsonify({"error": "canceled"})
@@ -103,11 +126,10 @@ def select_video():
 
 @app.route('/api/select_dir', methods=['POST'])
 def select_dir():
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes('-topmost', True)
-    d = filedialog.askdirectory(title="选择输出目录")
-    root.destroy()
+    dialog_event.clear()
+    dialog_queue.put({'type': 'dir'})
+    dialog_event.wait()
+    d = dialog_result.get('path', '')
     if d:
         return jsonify({"path": d})
     return jsonify({"error": "canceled"})
@@ -191,8 +213,13 @@ def process_videos_thread(data):
             if out_w != int(width) or out_h != int(height):
                 filter_str += f",scale={out_w}:{out_h}"
                 
-            # 使用本地同级目录下的 ffmpeg.exe，彻底摆脱环境变量依赖
-            ffmpeg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ffmpeg.exe")
+            # 动态获取可执行文件所在目录（兼容 PyInstaller 打包环境）
+            if getattr(sys, 'frozen', False):
+                app_dir = os.path.dirname(sys.executable)
+            else:
+                app_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            ffmpeg_path = os.path.join(app_dir, "ffmpeg.exe")
             if not os.path.exists(ffmpeg_path):
                 ffmpeg_path = "ffmpeg" # 降级为系统环境变量
                 
@@ -201,9 +228,15 @@ def process_videos_thread(data):
                 "-vsync", "0", "-q:v", "2", out_pattern
             ]
             
+            # 配置 subprocess 以隐藏 ffmpeg 的 CMD 黑框 (仅在 Windows 下生效)
+            creationflags = 0
+            if os.name == 'nt':
+                creationflags = subprocess.CREATE_NO_WINDOW
+            
             process = subprocess.Popen(
                 cmd, stderr=subprocess.PIPE, universal_newlines=True,
-                encoding='utf-8', errors='ignore'
+                encoding='utf-8', errors='ignore',
+                creationflags=creationflags
             )
             state["current_process"] = process
             
@@ -234,6 +267,13 @@ def process_videos_thread(data):
                 log(f"🚫 {prefix} 提取已被强行终止")
                 state[prog_key]["status"] = "已终止"
                 return saved_count
+                
+            # 检查 ffmpeg 是否是正常退出（防止进程崩溃或被外部强杀导致假满进度）
+            if process.returncode != 0:
+                log(f"❌ {prefix} ffmpeg 异常退出 (code: {process.returncode})，提取未完成。")
+                state[prog_key]["status"] = "异常退出"
+                state[prog_key]["eta"] = "失败"
+                raise Exception(f"{prefix} ffmpeg 处理崩溃或被强杀")
                 
             state[prog_key]["current"] = expected_total_images
             state[prog_key]["percent"] = 100
@@ -306,10 +346,107 @@ def get_status():
         "logs": state["logs"]
     })
 
+@app.route('/api/focus', methods=['POST'])
+def focus_api():
+    dialog_queue.put({'type': 'focus'})
+    return jsonify({"app": "multi-sync", "status": "focused"})
+
+def run_flask():
+    # use_reloader=False 避免在多线程/打包环境下启动两次
+    app.run(port=5000, debug=False, use_reloader=False)
+
+def open_browser():
+    webbrowser.open('http://127.0.0.1:5000')
+
+def on_closing(root):
+    # 强制退出整个进程
+    os._exit(0)
+
+def process_dialogs(root):
+    try:
+        req = dialog_queue.get_nowait()
+        
+        if req['type'] == 'focus':
+            # 恢复窗口并强制置顶显示
+            if root.state() == 'iconic':
+                root.deiconify()
+            root.attributes('-topmost', True)
+            root.attributes('-topmost', False)
+            root.lift()
+            root.focus_force()
+            open_browser()
+        else:
+            # 创建一个临时的顶级窗口用于挂载对话框，强制其置顶
+            top = tk.Toplevel(root)
+            top.attributes('-topmost', True)
+            top.withdraw()  # 隐藏这个临时窗口
+            
+            if req['type'] == 'video':
+                filepath = filedialog.askopenfilename(
+                    title="选择视频",
+                    filetypes=[("Video Files", "*.mp4 *.avi *.mov *.mkv")],
+                    parent=top
+                )
+                dialog_result['filepath'] = filepath
+            elif req['type'] == 'dir':
+                d = filedialog.askdirectory(title="选择输出目录", parent=top)
+                dialog_result['path'] = d
+                
+            top.destroy()
+            dialog_event.set()
+    except queue.Empty:
+        pass
+    root.after(100, lambda: process_dialogs(root))
+
 if __name__ == '__main__':
-    print("="*50)
-    print("Multi-Sync Web 后端服务已启动")
-    print("正在尝试在浏览器中打开前端界面...")
-    print("="*50)
-    threading.Timer(1.0, lambda: webbrowser.open('http://127.0.0.1:5000')).start()
-    app.run(port=5000, debug=False)
+    # 0. 单实例检测：如果已经有实例在运行，则通知它置顶并退出当前实例
+    try:
+        req = urllib.request.Request('http://127.0.0.1:5000/api/focus', method='POST')
+        with urllib.request.urlopen(req, timeout=1) as response:
+            res_body = response.read().decode('utf-8')
+            if 'multi-sync' in res_body:
+                print("检测到程序已在运行，已唤起已有窗口。")
+                os._exit(0)
+    except Exception:
+        pass
+
+    # 1. 在后台线程中启动 Flask 服务
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+    # 2. 在主线程中创建 Tkinter 控制台 GUI
+    root = tk.Tk()
+    root.title("多视角视频同步抽帧 - 控制台")
+    root.geometry("380x180")
+    root.resizable(False, False)
+    root.protocol("WM_DELETE_WINDOW", lambda: on_closing(root))
+
+    # 居中显示窗口
+    root.update_idletasks()
+    width = root.winfo_width()
+    height = root.winfo_height()
+    x = (root.winfo_screenwidth() // 2) - (width // 2)
+    y = (root.winfo_screenheight() // 2) - (height // 2)
+    root.geometry(f'{width}x{height}+{x}+{y}')
+
+    # 界面元素
+    tk.Label(root, text="✅ 服务正在运行中", font=("微软雅黑", 14, "bold"), fg="green").pack(pady=(20, 5))
+    tk.Label(root, text="请保持此窗口打开，关闭窗口即停止服务", font=("微软雅黑", 10), fg="#666666").pack(pady=(0, 20))
+
+    btn_frame = tk.Frame(root)
+    btn_frame.pack()
+
+    btn_open = tk.Button(btn_frame, text="🌐 打开网页界面", command=open_browser, width=15, font=("微软雅黑", 10), cursor="hand2")
+    btn_open.pack(side=tk.LEFT, padx=10)
+
+    btn_exit = tk.Button(btn_frame, text="⏹ 关闭并退出", command=lambda: on_closing(root), width=15, font=("微软雅黑", 10), cursor="hand2")
+    btn_exit.pack(side=tk.LEFT, padx=10)
+
+    # 启动轮询，处理来自 Flask 线程的对话框请求
+    root.after(100, lambda: process_dialogs(root))
+
+    # 启动时自动打开一次网页
+    root.after(1000, open_browser)
+
+    # 运行主循环
+    root.mainloop()
