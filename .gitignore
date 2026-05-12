@@ -1,0 +1,25 @@
+# 忽略视频文件（避免把巨大的监控视频传到 GitHub 导致仓库爆满）
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# 忽略输出的图片文件夹
+outputs/
+forward/
+backward/
+
+# Python 缓存和虚拟环境
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+
+# IDE 配置文件
+.vscode/
+.idea/
+*.swp
+*.suo
