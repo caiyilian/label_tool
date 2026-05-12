@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Multi-Sync // 多视角视频同步抽帧</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;450;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+	<script>
+		tailwind.config = {
+		    theme: {
+		        extend: {
+		            fontFamily: {
+		                sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+		                mono: ['JetBrains Mono', 'SF Mono', 'monospace'],
+		            },
+		            colors: {
+		                pro: {
+		                    bg: '#0a0a0a',
+		                    surface: '#141414',
+		                    surfaceHover: '#1a1a1a',
+		                    border: 'rgba(255,255,255,0.06)',
+		                    borderStrong: 'rgba(255,255,255,0.12)',
+		                    accent: '#5a7a96',
+		                    accentHover: '#6d8fab',
+		                    accentMuted: 'rgba(90,122,150,0.15)',
+		                    text: '#e1e1e1',
+		                    textSecondary: '#8a8a8a',
+		                    textTertiary: '#555555',
+		                    success: '#5a8c6f',
+		                    alert: '#8c5a5a',
+		                    warning: '#8c7a5a',
+		                }
+		            }
+		        }
+		    }
+		}
+	</script>
+	<style>
+		body { background-color: #0a0a0a; color: #e1e1e1; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+		.pro-bg { background-image: radial-gradient(circle at 50% 0%, rgba(90,122,150,0.03) 0%, transparent 60%); }
+		.pro-panel { background: #141414; border: 1px solid rgba(255,255,255,0.06); transition: border-color 0.2s ease, background-color 0.2s ease; }
+		.pro-panel:hover { border-color: rgba(255,255,255,0.09); }
+		.pro-input { background: #0f0f0f; border: 1px solid rgba(255,255,255,0.08); color: #e1e1e1; font-family: 'JetBrains Mono', monospace; font-weight: 400; transition: all 0.2s ease; }
+		.pro-input:hover { border-color: rgba(255,255,255,0.14); }
+		.pro-input:focus { outline: none; border-color: #5a7a96; background: #111111; }
+		.btn-ghost { background: transparent; border: 1px solid rgba(255,255,255,0.1); color: #e1e1e1; transition: all 0.2s ease; font-weight: 450; }
+		.btn-ghost:hover:not(:disabled) { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.18); }
+		.btn-ghost:active:not(:disabled) { transform: scale(0.98); }
+		.btn-accent { background: rgba(90,122,150,0.12); border: 1px solid rgba(90,122,150,0.25); color: #8aaac6; transition: all 0.2s ease; font-weight: 500; }
+		.btn-accent:hover:not(:disabled) { background: rgba(90,122,150,0.18); border-color: rgba(90,122,150,0.4); color: #a0bdd6; }
+		.btn-action { background: #1a1a1a; border: 1px solid rgba(255,255,255,0.08); color: #e1e1e1; transition: all 0.2s ease; font-weight: 500; }
+		.btn-action:hover:not(:disabled) { background: #222222; border-color: rgba(255,255,255,0.15); }
+		.progress-track { background: #0f0f0f; border-radius: 2px; overflow: hidden; }
+		.progress-fill { background: #5a7a96; border-radius: 2px; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+		::-webkit-scrollbar { width: 5px; }
+		::-webkit-scrollbar-track { background: transparent; }
+		::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 10px; }
+		::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
+		input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { opacity: 0.3; }
+		.divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); }
+		.video-placeholder { background: #0f0f0f; border: 1px dashed rgba(255,255,255,0.06); cursor: crosshair; }
+		.status-dot { width: 6px; height: 6px; border-radius: 50%; background: #333; transition: background 0.3s ease; }
+		.status-dot.active { background: #5a8c6f; }
+		.status-dot.idle { background: #333; }
+        .grab { cursor: grab; }
+        .grabbing { cursor: grabbing !important; }
+	</style>
+</head>
+<body class="min-h-screen pro-bg selection:bg-white/10 selection:text-white">
+	<header class="border-b border-white/[0.06] bg-[#0a0a0a]/90 sticky top-0 z-50 backdrop-blur-sm">
+		<div class="max-w-6xl mx-auto px-8 h-14 flex items-center justify-between">
+			<div class="flex items-center gap-3">
+				<div class="w-5 h-[1px] bg-white/20"></div>
+				<div><h1 class="text-[13px] font-medium tracking-wide text-white/90">Multi-Sync</h1></div>
+				<span class="text-[10px] text-white/30 font-mono ml-1 mt-0.5">v3.0 (Web版)</span>
+			</div>
+			<div class="flex items-center gap-6 text-[11px] font-mono text-white/40">
+				<span id="clock">00:00:00</span>
+			</div>
+		</div>
+	</header>
+	<main class="max-w-6xl mx-auto px-8 py-8 space-y-8">
+        <div id="zoom-hint" class="text-center text-[12px] text-[#8aaac6] hidden">
+            💡 提示：将鼠标悬停在下方画面上，滚动滚轮可缩放图片，按住左键可自由拖拽看清监控时间！
+        </div>
+		<section>
+			<div class="flex items-center gap-4 mb-5">
+				<span class="text-[10px] font-mono text-white/30 uppercase tracking-widest">01</span>
+				<div class="h-px flex-1 bg-white/[0.04]"></div>
+				<span class="text-[10px] font-mono text-white/30 uppercase tracking-widest">视频源配置</span>
+				<div class="h-px flex-1 bg-white/[0.04]"></div>
+			</div>
+			<div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+				<!-- CAM 1 -->
+				<div class="pro-panel rounded-lg p-5" id="panel-1">
+					<div class="flex items-center justify-between mb-4">
+						<div class="flex items-center gap-3">
+							<span class="text-[10px] font-mono text-white/40 bg-white/[0.04] px-1.5 py-0.5 rounded">CAM-01</span>
+							<span class="text-[13px] text-white/70">前视角视频</span>
+						</div>
+						<div class="status-dot idle" id="status-1"></div>
+					</div>
+					<div class="space-y-3.5">
+						<div>
+							<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5 font-medium">视频文件</label>
+							<div class="flex gap-2">
+								<button onclick="selectVideo(1)" class="btn-accent px-3 py-1.5 rounded text-[11px] flex items-center gap-1.5" id="btn-sel-1">
+									选择
+								</button>
+								<div id="filename-1" class="flex-1 px-3 py-1.5 rounded pro-input text-[11px] truncate flex items-center text-white/30">未选择文件</div>
+							</div>
+						</div>
+						<div>
+							<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5 font-medium">第一帧时间码</label>
+							<div class="flex items-center gap-1 font-mono text-[15px]">
+								<input type="number" id="h1" min="0" max="23" value="15" class="w-12 h-8 rounded pro-input text-center" onchange="validateTime(this, 23)">
+								<span class="text-white/20 pb-0.5">:</span>
+								<input type="number" id="m1" min="0" max="59" value="00" class="w-12 h-8 rounded pro-input text-center" onchange="validateTime(this, 59)">
+								<span class="text-white/20 pb-0.5">:</span>
+								<input type="number" id="s1" min="0" max="59" value="00" class="w-12 h-8 rounded pro-input text-center" onchange="validateTime(this, 59)">
+							</div>
+						</div>
+					</div>
+					<div id="container-1" class="mt-4 aspect-video rounded video-placeholder relative overflow-hidden group grab">
+						<img id="img-1" class="hidden absolute" style="transform-origin: 0 0;" />
+						<div id="placeholder-1" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+							<span class="text-[9px] text-white/15 uppercase tracking-[0.2em]">Preview</span>
+						</div>
+					</div>
+				</div>
+				<!-- CAM 2 -->
+				<div class="pro-panel rounded-lg p-5" id="panel-2">
+					<div class="flex items-center justify-between mb-4">
+						<div class="flex items-center gap-3">
+							<span class="text-[10px] font-mono text-white/40 bg-white/[0.04] px-1.5 py-0.5 rounded">CAM-02</span>
+							<span class="text-[13px] text-white/70">后视角视频</span>
+						</div>
+						<div class="status-dot idle" id="status-2"></div>
+					</div>
+					<div class="space-y-3.5">
+						<div>
+							<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5 font-medium">视频文件</label>
+							<div class="flex gap-2">
+								<button onclick="selectVideo(2)" class="btn-accent px-3 py-1.5 rounded text-[11px] flex items-center gap-1.5" id="btn-sel-2">
+									选择
+								</button>
+								<div id="filename-2" class="flex-1 px-3 py-1.5 rounded pro-input text-[11px] truncate flex items-center text-white/30">未选择文件</div>
+							</div>
+						</div>
+						<div>
+							<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5 font-medium">第一帧时间码</label>
+							<div class="flex items-center gap-1 font-mono text-[15px]">
+								<input type="number" id="h2" min="0" max="23" value="15" class="w-12 h-8 rounded pro-input text-center" onchange="validateTime(this, 23)">
+								<span class="text-white/20 pb-0.5">:</span>
+								<input type="number" id="m2" min="0" max="59" value="00" class="w-12 h-8 rounded pro-input text-center" onchange="validateTime(this, 59)">
+								<span class="text-white/20 pb-0.5">:</span>
+								<input type="number" id="s2" min="0" max="59" value="00" class="w-12 h-8 rounded pro-input text-center" onchange="validateTime(this, 59)">
+							</div>
+						</div>
+					</div>
+					<div id="container-2" class="mt-4 aspect-video rounded video-placeholder relative overflow-hidden group grab">
+						<img id="img-2" class="hidden absolute" style="transform-origin: 0 0;" />
+						<div id="placeholder-2" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+							<span class="text-[9px] text-white/15 uppercase tracking-[0.2em]">Preview</span>
+						</div>
+					</div>
+				</div>
+			</div>
+		</section>
+		<div class="flex justify-center">
+			<div id="sync-badge" class="px-3 py-1 rounded bg-white/[0.03] border border-white/[0.06] text-[10px] text-white/30 font-mono tracking-wider opacity-0 transition-opacity">
+			</div>
+		</div>
+		<section>
+			<div class="flex items-center gap-4 mb-5">
+				<span class="text-[10px] font-mono text-white/30 uppercase tracking-widest">02</span>
+				<div class="h-px flex-1 bg-white/[0.04]"></div>
+				<span class="text-[10px] font-mono text-white/30 uppercase tracking-widest">输出配置</span>
+				<div class="h-px flex-1 bg-white/[0.04]"></div>
+			</div>
+			<div class="pro-panel rounded-lg p-6">
+				<div class="grid grid-cols-1 md:grid-cols-12 gap-5 mb-6">
+					<div class="md:col-span-5">
+						<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-2 font-medium">输出目录</label>
+						<button id="btn-out" onclick="selectOutput()" disabled class="w-full btn-ghost px-3 py-2 rounded text-[11px] flex items-center justify-between group disabled:opacity-30 disabled:cursor-not-allowed">
+							<span id="output-path" class="truncate font-mono text-white/25">选择输出目录...</span>
+						</button>
+					</div>
+					<div class="md:col-span-3">
+						<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-2 font-medium">分辨率限制</label>
+						<div class="relative">
+							<select id="resolution" disabled class="w-full px-3 py-2 rounded pro-input text-[11px] appearance-none disabled:opacity-30">
+								<option value="original">原分辨率 (Original)</option>
+							</select>
+						</div>
+					</div>
+					<div class="md:col-span-4 flex items-end">
+						<div class="w-full p-3 rounded bg-white/[0.02] border border-white/[0.04]">
+							<div class="flex justify-between text-[10px] text-white/25 uppercase tracking-wider mb-1 font-medium">
+								<span>预估帧数</span><span class="text-white/50 font-mono" id="estimate-frames">--</span>
+							</div>
+							<div class="flex justify-between text-[10px] text-white/25 uppercase tracking-wider font-medium">
+								<span>预估体积</span><span class="text-white/50 font-mono" id="estimate-size">--</span>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="divider mb-6"></div>
+				<div class="flex items-center justify-center gap-3">
+					<button id="btn-start" onclick="startMission()" disabled class="btn-action px-6 py-2 rounded text-[12px] flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
+						<span class="tracking-wide">▶ 开始同步抽帧</span>
+					</button>
+					<button id="btn-stop" onclick="stopMission()" disabled class="btn-ghost px-6 py-2 rounded text-[12px] flex items-center gap-2 text-[#8c5a5a] border-white/[0.06] disabled:opacity-20 hover:text-white/60">
+						<span class="tracking-wide">⏹ 停止</span>
+					</button>
+				</div>
+			</div>
+		</section>
+		<section>
+			<div class="flex items-center gap-4 mb-5">
+				<span class="text-[10px] font-mono text-white/30 uppercase tracking-widest">03</span>
+				<div class="h-px flex-1 bg-white/[0.04]"></div>
+				<span class="text-[10px] font-mono text-white/30 uppercase tracking-widest">进度监控</span>
+				<div class="h-px flex-1 bg-white/[0.04]"></div>
+			</div>
+			<div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+				<div class="pro-panel rounded-lg p-5">
+					<div class="flex items-center justify-between mb-3">
+						<div class="flex items-center gap-2">
+							<span class="text-[9px] font-mono text-white/40 bg-white/[0.04] px-1.5 py-0.5 rounded">CH1</span>
+							<span class="text-[11px] text-white/50" id="progress-status-1">等待</span>
+						</div>
+						<span class="text-[11px] font-mono text-white/60" id="progress-percent-1">0%</span>
+					</div>
+					<div class="progress-track h-1.5 mb-2">
+						<div id="progress-bar-1" class="progress-fill h-full" style="width: 0%"></div>
+					</div>
+					<div class="flex justify-between text-[9px] font-mono text-white/25">
+						<span id="progress-detail-1">0 / 0</span>
+						<span id="time-remain-1">--:--</span>
+					</div>
+				</div>
+				<div class="pro-panel rounded-lg p-5">
+					<div class="flex items-center justify-between mb-3">
+						<div class="flex items-center gap-2">
+							<span class="text-[9px] font-mono text-white/40 bg-white/[0.04] px-1.5 py-0.5 rounded">CH2</span>
+							<span class="text-[11px] text-white/50" id="progress-status-2">等待</span>
+						</div>
+						<span class="text-[11px] font-mono text-white/60" id="progress-percent-2">0%</span>
+					</div>
+					<div class="progress-track h-1.5 mb-2">
+						<div id="progress-bar-2" class="progress-fill h-full" style="width: 0%"></div>
+					</div>
+					<div class="flex justify-between text-[9px] font-mono text-white/25">
+						<span id="progress-detail-2">0 / 0</span>
+						<span id="time-remain-2">--:--</span>
+					</div>
+				</div>
+			</div>
+		</section>
+		<section class="pb-12">
+			<div class="pro-panel rounded-lg p-4 font-mono text-[10px] text-white/25 h-36 overflow-y-auto leading-relaxed" id="system-log">
+			</div>
+		</section>
+	</main>
+	<script>
+		const state = {
+		    v1: null, v2: null,
+		    outputDir: null,
+		    running: false
+		};
+		
+		setInterval(() => {
+		    document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
+		}, 1000);
+
+        function renderLogs(logs) {
+            const logEl = document.getElementById('system-log');
+            logEl.innerHTML = '';
+            logs.forEach(msg => {
+                const line = document.createElement('div');
+                line.textContent = msg;
+                if(msg.includes('错误') || msg.includes('异常') || msg.includes('🚫')) line.className = 'text-[#8c5a5a]';
+                else if(msg.includes('✅') || msg.includes('完成')) line.className = 'text-[#5a8c6f]';
+                else line.className = 'text-white/30';
+                logEl.appendChild(line);
+            });
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+		async function selectVideo(id) {
+            const btn = document.getElementById(`btn-sel-${id}`);
+            btn.disabled = true;
+            btn.textContent = "加载中...";
+            
+            try {
+                const res = await fetch('/api/select_video', { method: 'POST' });
+                const data = await (res.json());
+                
+                if (data.error) {
+                    if (data.error !== "canceled") alert(data.error);
+                } else {
+                    state[`v${id}`] = data;
+                    document.getElementById(`filename-${id}`).textContent = data.name;
+                    document.getElementById(`filename-${id}`).classList.replace('text-white/30', 'text-white/70');
+                    document.getElementById(`status-${id}`).classList.replace('idle', 'active');
+                    
+                    const img = document.getElementById(`img-${id}`);
+                    img.src = 'data:image/jpeg;base64,' + data.first_frame;
+                    img.classList.remove('hidden');
+                    document.getElementById(`placeholder-${id}`).classList.add('hidden');
+                    
+                    document.getElementById('zoom-hint').classList.remove('hidden');
+                    
+                    initImageZoomPan(`container-${id}`, `img-${id}`, data.width, data.height);
+                    updateEstimateAndResolution();
+                }
+            } catch(e) {
+                console.error(e);
+            }
+            btn.disabled = false;
+            btn.innerHTML = "选择";
+            checkState();
+		}
+
+        function initImageZoomPan(containerId, imgId, nativeW, nativeH) {
+            const container = document.getElementById(containerId);
+            const img = document.getElementById(imgId);
+            
+            let scale = 1, tx = 0, ty = 0;
+            let isDragging = false, startX, startY;
+
+            // Fit image into container bounds initially
+            const cw = container.clientWidth;
+            const ch = container.clientHeight;
+            const fitScale = Math.min(cw/nativeW, ch/nativeH);
+            const displayW = nativeW * fitScale;
+            const displayH = nativeH * fitScale;
+            
+            // Center it
+            tx = (cw - displayW) / 2;
+            ty = (ch - displayH) / 2;
+            
+            img.style.width = displayW + 'px';
+            img.style.height = displayH + 'px';
+            img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+
+            container.onwheel = e => {
+                e.preventDefault();
+                const xs = (e.clientX - container.getBoundingClientRect().left - tx) / scale;
+                const ys = (e.clientY - container.getBoundingClientRect().top - ty) / scale;
+                const delta = e.deltaY > 0 ? 0.9 : 1.1;
+                let newScale = scale * delta;
+                newScale = Math.max(1, Math.min(newScale, 20));
+                
+                tx = tx + xs * scale - xs * newScale;
+                ty = ty + ys * scale - ys * newScale;
+                scale = newScale;
+
+                // Restrict boundaries
+                if(scale === 1) {
+                    tx = (cw - displayW) / 2;
+                    ty = (ch - displayH) / 2;
+                }
+                img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+            };
+
+            container.onmousedown = e => {
+                if(scale > 1) {
+                    isDragging = true;
+                    startX = e.clientX - tx;
+                    startY = e.clientY - ty;
+                    container.classList.add('grabbing');
+                }
+            };
+            window.addEventListener('mousemove', e => {
+                if(!isDragging) return;
+                tx = e.clientX - startX;
+                ty = e.clientY - startY;
+                img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+            });
+            window.addEventListener('mouseup', () => {
+                isDragging = false;
+                container.classList.remove('grabbing');
+            });
+        }
+		
+		async function selectOutput() {
+            const res = await fetch('/api/select_dir', { method: 'POST' });
+            const data = await res.json();
+            if(!data.error) {
+                state.outputDir = data.path;
+                const el = document.getElementById('output-path');
+                el.textContent = data.path;
+                el.classList.replace('text-white/25', 'text-white/70');
+                document.getElementById('btn-out').classList.add('border-[#5a7a96]');
+            }
+            checkState();
+		}
+		
+		function validateTime(input, max) {
+		    let val = parseInt(input.value);
+		    if (isNaN(val) || val < 0) val = 0;
+		    if (val > max) val = max;
+		    input.value = val.toString().padStart(2, '0');
+		    checkSyncBadge();
+		}
+
+        function getSec(prefix) {
+            return parseInt(document.getElementById(`h${prefix}`).value)*3600 +
+                   parseInt(document.getElementById(`m${prefix}`).value)*60 +
+                   parseInt(document.getElementById(`s${prefix}`).value);
+        }
+		
+		function checkSyncBadge() {
+		    const badge = document.getElementById('sync-badge');
+		    if (state.v1 && state.v2) {
+		        const diff = getSec(2) - getSec(1);
+		        badge.style.opacity = '1';
+		        const sign = diff >= 0 ? '+' : '';
+		        badge.innerHTML = `偏移 <span class="text-white/60">${sign}${diff.toFixed(2)}s</span>`;
+		    } else {
+		        badge.style.opacity = '0';
+		    }
+		}
+
+        function updateEstimateAndResolution() {
+            let totalFrames = 0;
+            let minW = Infinity;
+            if(state.v1) { totalFrames += state.v1.total_frames; minW = Math.min(minW, state.v1.width); }
+            if(state.v2) { totalFrames += state.v2.total_frames; minW = Math.min(minW, state.v2.width); }
+            
+            if(totalFrames > 0) {
+                document.getElementById('estimate-frames').textContent = totalFrames.toLocaleString();
+                document.getElementById('estimate-size').textContent = `~${((totalFrames/25)*2/1024).toFixed(2)} GB`;
+            }
+
+            const sel = document.getElementById('resolution');
+            sel.innerHTML = '<option value="original">原分辨率 (Original)</option>';
+            if(minW > 1920) sel.innerHTML += '<option value="1920x1080">FHD (1920×1080)</option>';
+            if(minW > 1280) sel.innerHTML += '<option value="1280x720">HD (1280×720)</option>';
+            if(minW > 854) sel.innerHTML += '<option value="854x480">SD (854×480)</option>';
+        }
+
+        function checkState() {
+            const hasBoth = state.v1 && state.v2;
+            const btnOut = document.getElementById('btn-out');
+            const selRes = document.getElementById('resolution');
+            const btnStart = document.getElementById('btn-start');
+
+            btnOut.disabled = !hasBoth;
+            selRes.disabled = !hasBoth;
+            btnStart.disabled = !(hasBoth && state.outputDir);
+
+            if(hasBoth) {
+                btnOut.classList.replace('btn-ghost', 'btn-accent');
+            }
+            if(hasBoth && state.outputDir) {
+                btnStart.classList.replace('btn-action', 'btn-accent');
+                btnStart.style.backgroundColor = '#5a8c6f20';
+                btnStart.style.borderColor = '#5a8c6f50';
+                btnStart.style.color = '#8cbaa0';
+            }
+            checkSyncBadge();
+        }
+		
+		async function startMission() {
+            const resVal = document.getElementById('resolution').value;
+            let res_limit = null;
+            if(resVal !== 'original') {
+                const parts = resVal.split('x');
+                res_limit = [parseInt(parts[0]), parseInt(parts[1])];
+            }
+
+            const payload = {
+                v1: state.v1.path,
+                v2: state.v2.path,
+                out: state.outputDir,
+                t1_sec: getSec(1),
+                t2_sec: getSec(2),
+                res_limit: res_limit
+            };
+
+            await fetch('/api/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            startPolling();
+		}
+
+        async function stopMission() {
+            await fetch('/api/stop', { method: 'POST' });
+        }
+
+        let pollTimer = null;
+        function startPolling() {
+            document.getElementById('btn-start').disabled = true;
+            document.getElementById('btn-stop').disabled = false;
+            document.getElementById('btn-out').disabled = true;
+            document.getElementById('resolution').disabled = true;
+
+            if(pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(async () => {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+
+                renderLogs(data.logs);
+
+                [1, 2].forEach(id => {
+                    const p = data[`progress${id}`];
+                    document.getElementById(`progress-bar-${id}`).style.width = `${p.percent}%`;
+                    document.getElementById(`progress-percent-${id}`).textContent = `${p.percent}%`;
+                    document.getElementById(`progress-status-${id}`).textContent = p.status;
+                    document.getElementById(`progress-detail-${id}`).textContent = `${p.current} / ${p.total}`;
+                    document.getElementById(`time-remain-${id}`).textContent = p.eta;
+                });
+
+                if(!data.is_processing) {
+                    clearInterval(pollTimer);
+                    document.getElementById('btn-start').disabled = false;
+                    document.getElementById('btn-stop').disabled = true;
+                    document.getElementById('btn-out').disabled = false;
+                    document.getElementById('resolution').disabled = false;
+                }
+            }, 500);
+        }
+	</script>
+</body>
+</html>

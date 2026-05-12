@@ -23,3 +23,6 @@ ENV/
 .idea/
 *.swp
 *.suo
+
+# exe文件
+ffmpeg.exe
