@@ -114,12 +114,21 @@ def save_annotation():
     index = data.get('index')
     annotation = data.get('annotation')
 
-    if index is None or annotation is None:
-        return jsonify({"error": "missing index or annotation"}), 400
+    if index is None:
+        return jsonify({"error": "missing index"}), 400
+
+    global annotations_dir
+    if not os.path.isdir(annotations_dir):
+        os.makedirs(annotations_dir, exist_ok=True)
 
     front_name = os.path.basename(front_files[index])
     json_name = front_name.replace('.jpg', '.json')
     json_path = os.path.join(annotations_dir, json_name)
+
+    if annotation is None or (isinstance(annotation, dict) and not annotation.get('annotations')):
+        if os.path.exists(json_path):
+            os.remove(json_path)
+        return jsonify({"success": True, "deleted": True})
 
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(annotation, f, ensure_ascii=False, indent=2)
