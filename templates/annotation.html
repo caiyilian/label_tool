@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>坐姿标注工具</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;450;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+	<script>
+		tailwind.config = {
+			theme: {
+				extend: {
+					fontFamily: {
+						sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+						mono: ['JetBrains Mono', 'SF Mono', 'monospace'],
+					}
+				}
+			}
+		}
+	</script>
+	<style>
+		* { box-sizing: border-box; }
+		body { background: #0a0a0a; color: #e1e1e1; font-family: 'Inter', sans-serif; margin: 0; overflow: hidden; height: 100vh; }
+		::-webkit-scrollbar { width: 5px; }
+		::-webkit-scrollbar-track { background: transparent; }
+		::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+		.canvas-container { position: relative; background: #0f0f0f; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; overflow: hidden; cursor: crosshair; }
+		.canvas-container canvas { position: absolute; top: 0; left: 0; }
+		.bbox-rect { stroke: #5a8c6f; stroke-width: 2; fill: rgba(90,140,111,0.1); }
+		.bbox-rect.selected { stroke: #e6c84c; fill: rgba(230,200,76,0.15); }
+		.bbox-rect:hover { stroke: #8aaac6; }
+		.label-panel { position: fixed; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 16px; z-index: 100; min-width: 260px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+		.label-panel.hidden { display: none; }
+		.radio-group { display: flex; flex-wrap: wrap; gap: 6px; }
+		.radio-btn { padding: 4px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); color: #aaa; font-size: 12px; cursor: pointer; transition: all 0.15s; user-select: none; }
+		.radio-btn:hover { border-color: rgba(255,255,255,0.2); color: #ddd; }
+		.radio-btn.active { background: rgba(90,122,150,0.2); border-color: rgba(90,122,150,0.5); color: #8aaac6; }
+		.check-btn { padding: 4px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); color: #aaa; font-size: 12px; cursor: pointer; transition: all 0.15s; user-select: none; }
+		.check-btn:hover { border-color: rgba(255,255,255,0.2); color: #ddd; }
+		.check-btn.active { background: rgba(140,90,90,0.2); border-color: rgba(140,90,90,0.5); color: #c8a0a0; }
+		.frame-item { padding: 4px 8px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #555; cursor: pointer; border-radius: 3px; transition: all 0.1s; }
+		.frame-item:hover { background: rgba(255,255,255,0.04); color: #aaa; }
+		.frame-item.current { background: rgba(90,122,150,0.15); color: #8aaac6; }
+		.frame-item.done { color: #5a8c6f; }
+		.student-chip { padding: 4px 8px; font-size: 11px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: #888; cursor: pointer; transition: all 0.15s; display: flex; justify-content: space-between; align-items: center; }
+		.student-chip:hover { border-color: rgba(255,255,255,0.15); color: #bbb; }
+		.student-chip.selected { border-color: rgba(230,200,76,0.4); color: #e6c84c; background: rgba(230,200,76,0.05); }
+		.btn { padding: 6px 14px; border-radius: 4px; font-size: 12px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #ccc; transition: all 0.15s; }
+		.btn:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.18); }
+		.btn:active { transform: scale(0.97); }
+		.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+		.btn:disabled:hover { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.1); }
+		.btn-primary { background: rgba(90,122,150,0.15); border-color: rgba(90,122,150,0.3); color: #8aaac6; }
+		.btn-primary:hover { background: rgba(90,122,150,0.25); }
+		.btn-danger { background: rgba(140,90,90,0.15); border-color: rgba(140,90,90,0.3); color: #c8a0a0; }
+		.btn-danger:hover { background: rgba(140,90,90,0.25); }
+	</style>
+</head>
+<body>
+	<div id="welcome-screen" class="h-screen flex flex-col items-center justify-center">
+		<div class="text-center">
+			<h1 class="text-xl font-medium text-white/80 mb-2">坐姿标注工具</h1>
+			<p class="text-xs text-white/30 mb-8 font-mono">Annotation Tool v1.0</p>
+			<button id="btn-select-folder" class="btn btn-primary px-6 py-2.5 text-sm" onclick="selectFolder()">
+				选择数据文件夹
+			</button>
+			<p class="text-[10px] text-white/20 mt-4 max-w-xs">
+				文件夹需包含 forward 和 backward 子目录，且图片数量一致
+			</p>
+		</div>
+	</div>
+
+	<div id="main-screen" class="hidden h-screen flex flex-col">
+		<header class="flex items-center justify-between px-4 h-10 border-b border-white/[0.06] bg-[#0d0d0d] shrink-0">
+			<div class="flex items-center gap-3">
+				<span class="text-xs font-medium text-white/70">坐姿标注</span>
+				<span class="text-[10px] font-mono text-white/25" id="folder-path"></span>
+			</div>
+			<div class="flex items-center gap-4">
+				<span class="text-[10px] font-mono text-white/30" id="header-info">帧 0 / 0</span>
+				<button class="btn text-[10px] px-2 py-1" onclick="saveCurrentAnnotation()">保存</button>
+			</div>
+		</header>
+
+		<div class="flex flex-1 overflow-hidden">
+			<div class="flex-1 flex flex-col p-2 gap-2 min-w-0">
+				<div class="flex gap-2 flex-1 min-h-0">
+					<div class="flex-1 flex flex-col min-w-0">
+						<div class="flex items-center justify-between px-2 py-1">
+							<span class="text-[10px] font-mono text-white/30">前视角 (主标注区)</span>
+							<span class="text-[10px] font-mono text-white/20" id="front-filename"></span>
+						</div>
+						<div id="front-container" class="canvas-container flex-1" oncontextmenu="return false;">
+							<canvas id="front-canvas"></canvas>
+						</div>
+					</div>
+					<div class="flex-1 flex flex-col min-w-0">
+						<div class="flex items-center justify-between px-2 py-1">
+							<span class="text-[10px] font-mono text-white/30">后视角 (参考)</span>
+							<span class="text-[10px] font-mono text-white/20" id="back-filename"></span>
+						</div>
+						<div id="back-container" class="canvas-container flex-1" oncontextmenu="return false;">
+							<canvas id="back-canvas"></canvas>
+						</div>
+					</div>
+				</div>
+
+				<div class="flex items-center justify-between px-2 py-1.5 bg-[#111] rounded border border-white/[0.04]">
+					<div class="flex items-center gap-2">
+						<button class="btn text-[10px] px-3 py-1" onclick="prevFrame()" id="btn-prev">上一帧</button>
+						<button class="btn btn-primary text-[10px] px-3 py-1" onclick="copyPrevAnnotation()" id="btn-copy" title="复制上一帧所有标注到当前帧 (C)">复制上帧</button>
+						<button class="btn text-[10px] px-3 py-1" onclick="nextFrame()" id="btn-next">下一帧</button>
+					</div>
+					<div class="flex items-center gap-2">
+						<span class="text-[10px] font-mono text-white/20">快捷键: 拖拽画框 | C 复制 | Del 删除 | ← → 翻帧</span>
+					</div>
+				</div>
+			</div>
+
+			<div class="w-56 border-l border-white/[0.06] bg-[#0d0d0d] flex flex-col shrink-0">
+				<div class="px-3 py-2 border-b border-white/[0.04]">
+					<span class="text-[10px] font-mono text-white/30 uppercase tracking-wider">帧列表</span>
+				</div>
+				<div id="frame-list" class="flex-1 overflow-y-auto p-1"></div>
+
+				<div class="px-3 py-2 border-t border-white/[0.04] border-b border-b-white/[0.04]">
+					<div class="flex items-center justify-between">
+						<span class="text-[10px] font-mono text-white/30 uppercase tracking-wider">本帧学生</span>
+						<span class="text-[10px] font-mono text-white/20" id="student-count">0</span>
+					</div>
+				</div>
+				<div id="student-list" class="overflow-y-auto p-1" style="min-height: 120px; max-height: 200px;"></div>
+			</div>
+		</div>
+	</div>
+
+	<div id="label-panel" class="label-panel hidden">
+		<div class="flex items-center justify-between mb-3">
+			<span class="text-xs font-medium text-white/70" id="panel-title">学生 S01</span>
+			<button class="text-white/30 hover:text-white/60 text-sm" onclick="closeLabelPanel()">&times;</button>
+		</div>
+
+		<div class="mb-3">
+			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">学生编号</label>
+			<select id="lp-student-id" class="w-full bg-[#0f0f0f] border border-white/[0.08] rounded px-2 py-1 text-xs text-white/80" onchange="onStudentIdChange()"></select>
+		</div>
+
+		<div class="mb-3">
+			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">状态</label>
+			<div class="radio-group" id="lp-status">
+				<div class="radio-btn active" data-val="sitting_listening" onclick="selectRadio('lp-status', this)">坐-听说</div>
+				<div class="radio-btn" data-val="sitting_reading" onclick="selectRadio('lp-status', this)">坐-读写</div>
+				<div class="radio-btn" data-val="standing" onclick="selectRadio('lp-status', this)">站立</div>
+				<div class="radio-btn" data-val="left_seat" onclick="selectRadio('lp-status', this)">离席</div>
+			</div>
+		</div>
+
+		<div class="mb-3">
+			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">坐姿</label>
+			<div class="radio-group" id="lp-posture">
+				<div class="radio-btn active" data-val="normal" onclick="selectRadio('lp-posture', this)">正常</div>
+				<div class="radio-btn" data-val="bad" onclick="selectRadio('lp-posture', this)">不良</div>
+			</div>
+		</div>
+
+		<div class="mb-3" id="bad-reason-section">
+			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">不良原因（多选）</label>
+			<div class="radio-group" id="lp-bad-reason">
+				<div class="check-btn" data-val="head_tilt" onclick="toggleCheck('lp-bad-reason', this)">歪头</div>
+				<div class="check-btn" data-val="head_down" onclick="toggleCheck('lp-bad-reason', this)">低头</div>
+				<div class="check-btn" data-val="lean_forward" onclick="toggleCheck('lp-bad-reason', this)">俯身</div>
+				<div class="check-btn" data-val="side_lean" onclick="toggleCheck('lp-bad-reason', this)">侧身</div>
+			</div>
+		</div>
+
+		<div class="mb-3">
+			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">备注</label>
+			<input id="lp-note" type="text" class="w-full bg-[#0f0f0f] border border-white/[0.08] rounded px-2 py-1 text-xs text-white/80" placeholder="可选">
+		</div>
+
+		<div class="flex gap-2">
+			<button class="btn btn-primary flex-1 text-[11px]" onclick="confirmLabel()">确认</button>
+			<button class="btn btn-danger text-[11px] px-3" onclick="deleteSelected()">删除</button>
+		</div>
+	</div>
+
+	<script>
+		const state = {
+			folderPath: null,
+			totalFrames: 0,
+			currentIndex: 0,
+			annotations: {},
+			annotationsLoaded: {},
+			bboxes: [],
+			selectedBboxIdx: -1,
+			nextStudentNum: 1,
+			frontImg: null,
+			backImg: null,
+			frontImgW: 0,
+			frontImgH: 0,
+			backImgW: 0,
+			backImgH: 0,
+			drawing: false,
+			drawStart: null,
+			drawCurrent: null,
+			dragging: false,
+			dragBboxIdx: -1,
+			dragOffset: { x: 0, y: 0 },
+			resizing: false,
+			resizeHandle: null,
+			resizeBboxIdx: -1,
+			frontView: { scale: 1, tx: 0, ty: 0, fitScale: 1 },
+			backView: { scale: 1, tx: 0, ty: 0, fitScale: 1 },
+			isPanning: false,
+			panTarget: null,
+			panStart: { x: 0, y: 0 },
+		};
+
+		let frontCanvas, backCanvas, frontCtx, backCtx;
+		let frontContainer, backContainer;
+
+		async function selectFolder() {
+			try {
+				const res = await fetch('/api/select_folder', { method: 'POST' });
+				const data = await res.json();
+				if (data.error) {
+					if (data.error !== 'canceled') alert(data.error);
+					return;
+				}
+				state.folderPath = data.path;
+				state.totalFrames = data.total_frames;
+				state.currentIndex = 0;
+
+				document.getElementById('welcome-screen').classList.add('hidden');
+				document.getElementById('main-screen').classList.remove('hidden');
+				document.getElementById('folder-path').textContent = data.path;
+
+				initCanvases();
+				buildFrameList();
+				await loadBatchStatus();
+				await loadFrame(0);
+			} catch (e) {
+				console.error(e);
+			}
+		}
+
+		function initCanvases() {
+			frontCanvas = document.getElementById('front-canvas');
+			backCanvas = document.getElementById('back-canvas');
+			frontCtx = frontCanvas.getContext('2d');
+			backCtx = backCanvas.getContext('2d');
+			frontContainer = document.getElementById('front-container');
+			backContainer = document.getElementById('back-container');
+
+			const ro = new ResizeObserver(() => {
+				resizeCanvas(frontContainer, frontCanvas, state.frontView);
+				resizeCanvas(backContainer, backCanvas, state.backView);
+				renderFront();
+				renderBack();
+			});
+			ro.observe(frontContainer);
+			ro.observe(backContainer);
+
+			setupFrontInteraction();
+			setupPanZoom(frontContainer, state.frontView, renderFront);
+			setupPanZoom(backContainer, state.backView, renderBack);
+		}
+
+		function resizeCanvas(container, canvas, view) {
+			const w = container.clientWidth;
+			const h = container.clientHeight;
+			const dpr = window.devicePixelRatio || 1;
+			canvas.width = w * dpr;
+			canvas.height = h * dpr;
+			canvas.style.width = w + 'px';
+			canvas.style.height = h + 'px';
+		}
+
+		function setupPanZoom(container, view, renderFn) {
+			container.addEventListener('wheel', e => {
+				e.preventDefault();
+				const rect = container.getBoundingClientRect();
+				const mx = e.clientX - rect.left;
+				const my = e.clientY - rect.top;
+				const delta = e.deltaY > 0 ? 0.9 : 1.1;
+				const newScale = Math.max(1, Math.min(view.scale * delta, 20));
+
+				const imgX = (mx - view.tx) / view.scale;
+				const imgY = (my - view.ty) / view.scale;
+
+				view.scale = newScale;
+				view.tx = mx - imgX * newScale;
+				view.ty = my - imgY * newScale;
+
+				if (view.scale <= 1.01) {
+					view.tx = 0;
+					view.ty = 0;
+					view.scale = 1;
+				}
+				renderFn();
+			}, { passive: false });
+
+			let panning = false, panSX = 0, panSY = 0;
+			container.addEventListener('mousedown', e => {
+				if (e.button === 1 || (e.button === 0 && e.altKey)) {
+					panning = true;
+					panSX = e.clientX - view.tx;
+					panSY = e.clientY - view.ty;
+					container.style.cursor = 'grab';
+					e.preventDefault();
+				}
+			});
+			window.addEventListener('mousemove', e => {
+				if (!panning) return;
+				view.tx = e.clientX - panSX;
+				view.ty = e.clientY - panSY;
+				renderFn();
+			});
+			window.addEventListener('mouseup', () => {
+				if (panning) {
+					panning = false;
+					container.style.cursor = 'crosshair';
+				}
+			});
+		}
+
+		function fitImageToCanvas(imgW, imgH, canvasW, canvasH, view) {
+			const fitScale = Math.min(canvasW / imgW, canvasH / imgH);
+			view.fitScale = fitScale;
+			view.scale = 1;
+			view.tx = (canvasW - imgW * fitScale) / 2;
+			view.ty = (canvasH - imgH * fitScale) / 2;
+		}
+
+		function imgToCanvas(x, y, view) {
+			return {
+				x: x * view.fitScale * view.scale + view.tx,
+				y: y * view.fitScale * view.scale + view.ty
+			};
+		}
+
+		function canvasToImg(x, y, view) {
+			return {
+				x: (x - view.tx) / (view.fitScale * view.scale),
+				y: (y - view.ty) / (view.fitScale * view.scale)
+			};
+		}
+
+		async function loadFrame(index) {
+			state.currentIndex = index;
+			state.bboxes = JSON.parse(JSON.stringify(state.annotations[index] || []));
+			state.selectedBboxIdx = -1;
+			closeLabelPanel();
+
+			const frontImg = new Image();
+			const backImg = new Image();
+			frontImg.crossOrigin = 'anonymous';
+			backImg.crossOrigin = 'anonymous';
+
+			const frontUrl = `/api/frame_image/${index}/front`;
+			const backUrl = `/api/frame_image/${index}/back`;
+
+			await Promise.all([
+				new Promise((resolve, reject) => {
+					frontImg.onload = resolve;
+					frontImg.onerror = reject;
+					frontImg.src = frontUrl;
+				}),
+				new Promise((resolve, reject) => {
+					backImg.onload = resolve;
+					backImg.onerror = reject;
+					backImg.src = backUrl;
+				})
+			]);
+
+			state.frontImg = frontImg;
+			state.backImg = backImg;
+			state.frontImgW = frontImg.naturalWidth;
+			state.frontImgH = frontImg.naturalHeight;
+			state.backImgW = backImg.naturalWidth;
+			state.backImgH = backImg.naturalHeight;
+
+			const cw = frontContainer.clientWidth;
+			const ch = frontContainer.clientHeight;
+			fitImageToCanvas(state.frontImgW, state.frontImgH, cw, ch, state.frontView);
+
+			const bcw = backContainer.clientWidth;
+			const bch = backContainer.clientHeight;
+			fitImageToCanvas(state.backImgW, state.backImgH, bcw, bch, state.backView);
+
+			renderFront();
+			renderBack();
+			updateFrameListHighlight();
+			updateStudentList();
+			updateHeaderInfo();
+		}
+
+		function renderFront() {
+			const dpr = window.devicePixelRatio || 1;
+			const w = frontCanvas.width;
+			const h = frontCanvas.height;
+			frontCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			frontCtx.clearRect(0, 0, w, h);
+
+			if (!state.frontImg) return;
+
+			const v = state.frontView;
+			frontCtx.save();
+			frontCtx.translate(v.tx, v.ty);
+			frontCtx.scale(v.fitScale * v.scale, v.fitScale * v.scale);
+			frontCtx.drawImage(state.frontImg, 0, 0);
+
+			state.bboxes.forEach((bb, idx) => {
+				const isSelected = idx === state.selectedBboxIdx;
+				frontCtx.strokeStyle = isSelected ? '#e6c84c' : '#5a8c6f';
+				frontCtx.lineWidth = 2 / (v.fitScale * v.scale);
+				frontCtx.fillStyle = isSelected ? 'rgba(230,200,76,0.12)' : 'rgba(90,140,111,0.08)';
+				frontCtx.fillRect(bb.x1, bb.y1, bb.x2 - bb.x1, bb.y2 - bb.y1);
+				frontCtx.strokeRect(bb.x1, bb.y1, bb.x2 - bb.x1, bb.y2 - bb.y1);
+
+				const fontSize = Math.max(10, 12 / (v.fitScale * v.scale));
+				frontCtx.font = `${fontSize}px Inter, sans-serif`;
+				frontCtx.fillStyle = isSelected ? '#e6c84c' : '#5a8c6f';
+				const label = bb.student_id || `?`;
+				const statusMap = { sitting_listening: '坐听', sitting_reading: '坐读', standing: '站', left_seat: '离' };
+				const postureMap = { normal: '✓', bad: '✗' };
+				const displayText = `${label} ${statusMap[bb.status] || ''} ${postureMap[bb.posture] || ''}`;
+				const textY = bb.y1 - 4 / (v.fitScale * v.scale);
+				frontCtx.fillText(displayText, bb.x1, textY);
+			});
+
+			if (state.drawing && state.drawStart && state.drawCurrent) {
+				const sx = Math.min(state.drawStart.x, state.drawCurrent.x);
+				const sy = Math.min(state.drawStart.y, state.drawCurrent.y);
+				const ex = Math.max(state.drawStart.x, state.drawCurrent.x);
+				const ey = Math.max(state.drawStart.y, state.drawCurrent.y);
+				frontCtx.strokeStyle = '#8aaac6';
+				frontCtx.lineWidth = 1.5 / (v.fitScale * v.scale);
+				frontCtx.setLineDash([4 / (v.fitScale * v.scale), 4 / (v.fitScale * v.scale)]);
+				frontCtx.strokeRect(sx, sy, ex - sx, ey - sy);
+				frontCtx.setLineDash([]);
+			}
+
+			frontCtx.restore();
+		}
+
+		function renderBack() {
+			const dpr = window.devicePixelRatio || 1;
+			const w = backCanvas.width;
+			const h = backCanvas.height;
+			backCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			backCtx.clearRect(0, 0, w, h);
+
+			if (!state.backImg) return;
+
+			const v = state.backView;
+			backCtx.save();
+			backCtx.translate(v.tx, v.ty);
+			backCtx.scale(v.fitScale * v.scale, v.fitScale * v.scale);
+			backCtx.drawImage(state.backImg, 0, 0);
+			backCtx.restore();
+		}
+
+		function setupFrontInteraction() {
+			const container = frontContainer;
+
+			container.addEventListener('mousedown', e => {
+				if (e.button !== 0 || e.altKey) return;
+				const rect = container.getBoundingClientRect();
+				const mx = e.clientX - rect.left;
+				const my = e.clientY - rect.top;
+				const imgPt = canvasToImg(mx, my, state.frontView);
+
+				const handleSize = 8 / (state.frontView.fitScale * state.frontView.scale);
+
+				for (let i = state.bboxes.length - 1; i >= 0; i--) {
+					const bb = state.bboxes[i];
+					const handles = getResizeHandles(bb, handleSize);
+					for (const h of handles) {
+						if (Math.abs(imgPt.x - h.x) < handleSize && Math.abs(imgPt.y - h.y) < handleSize) {
+							state.resizing = true;
+							state.resizeBboxIdx = i;
+							state.resizeHandle = h.dir;
+							state.drawStart = imgPt;
+							state.selectedBboxIdx = i;
+							renderFront();
+							updateStudentList();
+							return;
+						}
+					}
+				}
+
+				for (let i = state.bboxes.length - 1; i >= 0; i--) {
+					const bb = state.bboxes[i];
+					if (imgPt.x >= bb.x1 && imgPt.x <= bb.x2 && imgPt.y >= bb.y1 && imgPt.y <= bb.y2) {
+						state.dragging = true;
+						state.dragBboxIdx = i;
+						state.dragOffset = { x: imgPt.x - bb.x1, y: imgPt.y - bb.y1 };
+						state.selectedBboxIdx = i;
+						container.style.cursor = 'move';
+						renderFront();
+						updateStudentList();
+						return;
+					}
+				}
+
+				state.drawing = true;
+				state.drawStart = imgPt;
+				state.drawCurrent = imgPt;
+			});
+
+			container.addEventListener('mousemove', e => {
+				const rect = container.getBoundingClientRect();
+				const mx = e.clientX - rect.left;
+				const my = e.clientY - rect.top;
+				const imgPt = canvasToImg(mx, my, state.frontView);
+
+				if (state.drawing) {
+					state.drawCurrent = imgPt;
+					renderFront();
+					return;
+				}
+
+				if (state.dragging && state.dragBboxIdx >= 0) {
+					const bb = state.bboxes[state.dragBboxIdx];
+					const w = bb.x2 - bb.x1;
+					const h = bb.y2 - bb.y1;
+					bb.x1 = imgPt.x - state.dragOffset.x;
+					bb.y1 = imgPt.y - state.dragOffset.y;
+					bb.x2 = bb.x1 + w;
+					bb.y2 = bb.y1 + h;
+					renderFront();
+					return;
+				}
+
+				if (state.resizing && state.resizeBboxIdx >= 0) {
+					const bb = state.bboxes[state.resizeBboxIdx];
+					const dir = state.resizeHandle;
+					if (dir.includes('e')) bb.x2 = imgPt.x;
+					if (dir.includes('w')) bb.x1 = imgPt.x;
+					if (dir.includes('s')) bb.y2 = imgPt.y;
+					if (dir.includes('n')) bb.y1 = imgPt.y;
+					normalizeBbox(bb);
+					renderFront();
+					return;
+				}
+
+				const handleSize = 8 / (state.frontView.fitScale * state.frontView.scale);
+				let cursor = 'crosshair';
+				for (let i = state.bboxes.length - 1; i >= 0; i--) {
+					const bb = state.bboxes[i];
+					const handles = getResizeHandles(bb, handleSize);
+					for (const h of handles) {
+						if (Math.abs(imgPt.x - h.x) < handleSize && Math.abs(imgPt.y - h.y) < handleSize) {
+							cursor = h.cursor;
+							container.style.cursor = cursor;
+							return;
+						}
+					}
+					if (imgPt.x >= bb.x1 && imgPt.x <= bb.x2 && imgPt.y >= bb.y1 && imgPt.y <= bb.y2) {
+						cursor = 'pointer';
+						break;
+					}
+				}
+				container.style.cursor = cursor;
+			});
+
+			container.addEventListener('mouseup', e => {
+				if (e.button !== 0) return;
+
+				if (state.resizing) {
+					state.resizing = false;
+					state.resizeBboxIdx = -1;
+					container.style.cursor = 'crosshair';
+					return;
+				}
+
+				if (state.dragging) {
+					state.dragging = false;
+					state.dragBboxIdx = -1;
+					container.style.cursor = 'crosshair';
+					return;
+				}
+
+				if (state.drawing && state.drawStart && state.drawCurrent) {
+					state.drawing = false;
+					const sx = Math.min(state.drawStart.x, state.drawCurrent.x);
+					const sy = Math.min(state.drawStart.y, state.drawCurrent.y);
+					const ex = Math.max(state.drawStart.x, state.drawCurrent.x);
+					const ey = Math.max(state.drawStart.y, state.drawCurrent.y);
+					const w = ex - sx;
+					const h = ey - sy;
+
+					if (w > 5 && h > 5) {
+						const bb = {
+							student_id: `S${String(state.nextStudentNum).padStart(2, '0')}`,
+							x1: Math.round(sx),
+							y1: Math.round(sy),
+							x2: Math.round(ex),
+							y2: Math.round(ey),
+							status: 'sitting_listening',
+							posture: 'normal',
+							bad_reason: [],
+							pose_keypoints: null,
+							note: ''
+						};
+						state.bboxes.push(bb);
+						state.selectedBboxIdx = state.bboxes.length - 1;
+						state.nextStudentNum++;
+						updateStudentList();
+						openLabelPanel(state.selectedBboxIdx);
+					}
+
+					state.drawStart = null;
+					state.drawCurrent = null;
+					renderFront();
+				}
+			});
+
+			container.addEventListener('dblclick', e => {
+				const rect = container.getBoundingClientRect();
+				const mx = e.clientX - rect.left;
+				const my = e.clientY - rect.top;
+				const imgPt = canvasToImg(mx, my, state.frontView);
+
+				for (let i = state.bboxes.length - 1; i >= 0; i--) {
+					const bb = state.bboxes[i];
+					if (imgPt.x >= bb.x1 && imgPt.x <= bb.x2 && imgPt.y >= bb.y1 && imgPt.y <= bb.y2) {
+						state.selectedBboxIdx = i;
+						openLabelPanel(i);
+						renderFront();
+						updateStudentList();
+						return;
+					}
+				}
+			});
+		}
+
+		function getResizeHandles(bb, size) {
+			const mx = (bb.x1 + bb.x2) / 2;
+			const my = (bb.y1 + bb.y2) / 2;
+			return [
+				{ x: bb.x1, y: bb.y1, dir: 'nw', cursor: 'nw-resize' },
+				{ x: mx, y: bb.y1, dir: 'n', cursor: 'n-resize' },
+				{ x: bb.x2, y: bb.y1, dir: 'ne', cursor: 'ne-resize' },
+				{ x: bb.x2, y: my, dir: 'e', cursor: 'e-resize' },
+				{ x: bb.x2, y: bb.y2, dir: 'se', cursor: 'se-resize' },
+				{ x: mx, y: bb.y2, dir: 's', cursor: 's-resize' },
+				{ x: bb.x1, y: bb.y2, dir: 'sw', cursor: 'sw-resize' },
+				{ x: bb.x1, y: my, dir: 'w', cursor: 'w-resize' },
+			];
+		}
+
+		function normalizeBbox(bb) {
+			if (bb.x1 > bb.x2) { const t = bb.x1; bb.x1 = bb.x2; bb.x2 = t; }
+			if (bb.y1 > bb.y2) { const t = bb.y1; bb.y1 = bb.y2; bb.y2 = t; }
+		}
+
+		function openLabelPanel(idx) {
+			const bb = state.bboxes[idx];
+			if (!bb) return;
+
+			const panel = document.getElementById('label-panel');
+			panel.classList.remove('hidden');
+
+			document.getElementById('panel-title').textContent = `学生 ${bb.student_id}`;
+
+			const select = document.getElementById('lp-student-id');
+			select.innerHTML = '';
+			const existingIds = new Set();
+			state.bboxes.forEach(b => existingIds.add(b.student_id));
+			existingIds.forEach(id => {
+				const opt = document.createElement('option');
+				opt.value = id;
+				opt.textContent = id;
+				if (id === bb.student_id) opt.selected = true;
+				select.appendChild(opt);
+			});
+			const newOpt = document.createElement('option');
+			newOpt.value = '__new__';
+			newOpt.textContent = '+ 新编号';
+			select.appendChild(newOpt);
+
+			setRadioValue('lp-status', bb.status || 'sitting_listening');
+			setRadioValue('lp-posture', bb.posture || 'normal');
+			setCheckValues('lp-bad-reason', bb.bad_reason || []);
+			document.getElementById('lp-note').value = bb.note || '';
+
+			updateBadReasonVisibility();
+
+			const rect = frontContainer.getBoundingClientRect();
+			const p = imgToCanvas(bb.x2 + 10, bb.y1, state.frontView);
+			let left = rect.left + p.x;
+			let top = rect.top + p.y;
+			if (left + 280 > window.innerWidth) left = rect.left + p.x - 280;
+			if (top + 350 > window.innerHeight) top = window.innerHeight - 360;
+			if (top < 10) top = 10;
+			panel.style.left = left + 'px';
+			panel.style.top = top + 'px';
+		}
+
+		function closeLabelPanel() {
+			document.getElementById('label-panel').classList.add('hidden');
+		}
+
+		function selectRadio(groupId, el) {
+			document.querySelectorAll(`#${groupId} .radio-btn`).forEach(b => b.classList.remove('active'));
+			el.classList.add('active');
+			if (groupId === 'lp-posture') updateBadReasonVisibility();
+		}
+
+		function getRadioValue(groupId) {
+			const active = document.querySelector(`#${groupId} .radio-btn.active`);
+			return active ? active.dataset.val : null;
+		}
+
+		function setRadioValue(groupId, val) {
+			document.querySelectorAll(`#${groupId} .radio-btn`).forEach(b => {
+				b.classList.toggle('active', b.dataset.val === val);
+			});
+		}
+
+		function toggleCheck(groupId, el) {
+			el.classList.toggle('active');
+		}
+
+		function getCheckValues(groupId) {
+			return Array.from(document.querySelectorAll(`#${groupId} .check-btn.active`)).map(b => b.dataset.val);
+		}
+
+		function setCheckValues(groupId, vals) {
+			document.querySelectorAll(`#${groupId} .check-btn`).forEach(b => {
+				b.classList.toggle('active', vals.includes(b.dataset.val));
+			});
+		}
+
+		function updateBadReasonVisibility() {
+			const posture = getRadioValue('lp-posture');
+			document.getElementById('bad-reason-section').style.opacity = posture === 'bad' ? '1' : '0.3';
+			document.getElementById('bad-reason-section').style.pointerEvents = posture === 'bad' ? 'auto' : 'none';
+		}
+
+		function confirmLabel() {
+			if (state.selectedBboxIdx < 0) return;
+			const bb = state.bboxes[state.selectedBboxIdx];
+			if (!bb) return;
+
+			bb.status = getRadioValue('lp-status') || 'sitting_listening';
+			bb.posture = getRadioValue('lp-posture') || 'normal';
+			bb.bad_reason = bb.posture === 'bad' ? getCheckValues('lp-bad-reason') : [];
+			bb.note = document.getElementById('lp-note').value;
+
+			const select = document.getElementById('lp-student-id');
+			if (select.value === '__new__') {
+				const newId = `S${String(state.nextStudentNum).padStart(2, '0')}`;
+				bb.student_id = newId;
+				state.nextStudentNum++;
+			} else {
+				bb.student_id = select.value;
+			}
+
+			closeLabelPanel();
+			renderFront();
+			updateStudentList();
+		}
+
+		function deleteSelected() {
+			if (state.selectedBboxIdx < 0) return;
+			state.bboxes.splice(state.selectedBboxIdx, 1);
+			state.selectedBboxIdx = -1;
+			closeLabelPanel();
+			renderFront();
+			updateStudentList();
+		}
+
+		function onStudentIdChange() {
+			const select = document.getElementById('lp-student-id');
+			if (select.value === '__new__') {
+				const newId = `S${String(state.nextStudentNum).padStart(2, '0')}`;
+				const opt = document.createElement('option');
+				opt.value = newId;
+				opt.textContent = newId;
+				select.insertBefore(opt, select.lastElementChild);
+				select.value = newId;
+				state.nextStudentNum++;
+			}
+		}
+
+		function updateStudentList() {
+			const list = document.getElementById('student-list');
+			list.innerHTML = '';
+			document.getElementById('student-count').textContent = state.bboxes.length;
+
+			const statusMap = { sitting_listening: '坐-听说', sitting_reading: '坐-读写', standing: '站立', left_seat: '离席' };
+			const postureMap = { normal: '正常', bad: '不良' };
+
+			state.bboxes.forEach((bb, idx) => {
+				const chip = document.createElement('div');
+				chip.className = `student-chip mb-1 ${idx === state.selectedBboxIdx ? 'selected' : ''}`;
+				const info = `${bb.student_id} ${statusMap[bb.status] || ''} ${postureMap[bb.posture] || ''}`;
+				chip.innerHTML = `<span>${info}</span>`;
+				chip.onclick = () => {
+					state.selectedBboxIdx = idx;
+					openLabelPanel(idx);
+					renderFront();
+					updateStudentList();
+				};
+				list.appendChild(chip);
+			});
+		}
+
+		function buildFrameList() {
+			const list = document.getElementById('frame-list');
+			list.innerHTML = '';
+			for (let i = 0; i < state.totalFrames; i++) {
+				const item = document.createElement('div');
+				item.className = 'frame-item';
+				item.textContent = `帧 ${String(i + 1).padStart(4, '0')}`;
+				item.dataset.index = i;
+				item.onclick = () => saveAndLoadFrame(i);
+				list.appendChild(item);
+			}
+		}
+
+		function updateFrameListHighlight() {
+			const items = document.querySelectorAll('.frame-item');
+			items.forEach((item, i) => {
+				item.classList.toggle('current', i === state.currentIndex);
+				item.classList.toggle('done', state.annotationsLoaded[i]);
+			});
+
+			const current = document.querySelector('.frame-item.current');
+			if (current) current.scrollIntoView({ block: 'nearest' });
+		}
+
+		function updateHeaderInfo() {
+			document.getElementById('header-info').textContent = `帧 ${state.currentIndex + 1} / ${state.totalFrames}`;
+			document.getElementById('front-filename').textContent = `front_${String(state.currentIndex + 1).padStart(6, '0')}.jpg`;
+			document.getElementById('back-filename').textContent = `back_${String(state.currentIndex + 1).padStart(6, '0')}.jpg`;
+		}
+
+		async function saveCurrentAnnotation() {
+			const annotation = {
+				frame_id: `frame_${String(state.currentIndex + 1).padStart(6, '0')}`,
+				image_file: `front_${String(state.currentIndex + 1).padStart(6, '0')}.jpg`,
+				annotations: state.bboxes.map(bb => ({
+					student_id: bb.student_id,
+					bbox: [bb.x1, bb.y1, bb.x2, bb.y2],
+					status: bb.status,
+					posture: bb.posture,
+					bad_reason: bb.bad_reason,
+					pose_keypoints: null,
+					note: bb.note || ''
+				}))
+			};
+
+			try {
+				const res = await fetch('/api/save_annotation', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ index: state.currentIndex, annotation })
+				});
+				const data = await res.json();
+				if (data.success) {
+					state.annotations[state.currentIndex] = JSON.parse(JSON.stringify(state.bboxes));
+					state.annotationsLoaded[state.currentIndex] = true;
+					updateFrameListHighlight();
+				}
+			} catch (e) {
+				console.error(e);
+				alert('保存失败: ' + e.message);
+			}
+		}
+
+		async function loadBatchStatus() {
+			try {
+				const res = await fetch('/api/batch_status');
+				const data = await res.json();
+				data.statuses.forEach((done, i) => {
+					state.annotationsLoaded[i] = done;
+				});
+				updateFrameListHighlight();
+			} catch (e) {
+				console.error(e);
+			}
+		}
+
+		async function loadAnnotation(index) {
+			try {
+				const res = await fetch(`/api/load_annotation/${index}`);
+				const data = await res.json();
+				if (data.exists && data.annotation) {
+					state.annotations[index] = data.annotation.annotations.map(a => ({
+						student_id: a.student_id,
+						x1: a.bbox[0],
+						y1: a.bbox[1],
+						x2: a.bbox[2],
+						y2: a.bbox[3],
+						status: a.status,
+						posture: a.posture,
+						bad_reason: a.bad_reason || [],
+						pose_keypoints: null,
+						note: a.note || ''
+					}));
+					state.annotationsLoaded[index] = true;
+				} else {
+					state.annotations[index] = [];
+				}
+			} catch (e) {
+				console.error(e);
+				state.annotations[index] = [];
+			}
+		}
+
+		async function saveAndLoadFrame(index) {
+			if (index === state.currentIndex) return;
+			await saveCurrentAnnotation();
+			await loadAnnotation(index);
+			await loadFrame(index);
+		}
+
+		async function prevFrame() {
+			if (state.currentIndex <= 0) return;
+			await saveAndLoadFrame(state.currentIndex - 1);
+		}
+
+		async function nextFrame() {
+			if (state.currentIndex >= state.totalFrames - 1) return;
+			await saveAndLoadFrame(state.currentIndex + 1);
+		}
+
+		async function copyPrevAnnotation() {
+			if (state.currentIndex <= 0) return;
+			await saveCurrentAnnotation();
+
+			const prevIdx = state.currentIndex - 1;
+			if (!state.annotations[prevIdx]) {
+				await loadAnnotation(prevIdx);
+			}
+
+			const prevBboxes = state.annotations[prevIdx];
+			if (!prevBboxes || prevBboxes.length === 0) {
+				alert('上一帧没有标注数据可复制');
+				return;
+			}
+
+			state.bboxes = JSON.parse(JSON.stringify(prevBboxes));
+			state.selectedBboxIdx = -1;
+
+			let maxNum = 0;
+			state.bboxes.forEach(bb => {
+				const m = bb.student_id.match(/^S(\d+)$/);
+				if (m) maxNum = Math.max(maxNum, parseInt(m[1]));
+			});
+			state.nextStudentNum = maxNum + 1;
+
+			closeLabelPanel();
+			renderFront();
+			updateStudentList();
+		}
+
+		document.addEventListener('keydown', e => {
+			if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+
+			if (e.key === 'ArrowLeft') {
+				e.preventDefault();
+				prevFrame();
+			} else if (e.key === 'ArrowRight') {
+				e.preventDefault();
+				nextFrame();
+			} else if (e.key === 'c' || e.key === 'C') {
+				e.preventDefault();
+				copyPrevAnnotation();
+			} else if (e.key === 'Delete' || e.key === 'Backspace') {
+				if (state.selectedBboxIdx >= 0) {
+					e.preventDefault();
+					deleteSelected();
+				}
+			} else if (e.key === 'Escape') {
+				closeLabelPanel();
+				state.selectedBboxIdx = -1;
+				renderFront();
+				updateStudentList();
+			} else if (e.key === 'Enter') {
+				if (!document.getElementById('label-panel').classList.contains('hidden')) {
+					e.preventDefault();
+					confirmLabel();
+				}
+			}
+		});
+	</script>
+</body>
+</html>
