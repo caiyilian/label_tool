@@ -28,9 +28,6 @@
 		::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
 		.canvas-container { position: relative; background: #0f0f0f; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; overflow: hidden; cursor: crosshair; }
 		.canvas-container canvas { position: absolute; top: 0; left: 0; }
-		.bbox-rect { stroke: #5a8c6f; stroke-width: 2; fill: rgba(90,140,111,0.1); }
-		.bbox-rect.selected { stroke: #e6c84c; fill: rgba(230,200,76,0.15); }
-		.bbox-rect:hover { stroke: #8aaac6; }
 		.label-panel { position: fixed; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 16px; z-index: 100; min-width: 260px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
 		.label-panel.hidden { display: none; }
 		.radio-group { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -44,7 +41,7 @@
 		.frame-item:hover { background: rgba(255,255,255,0.04); color: #aaa; }
 		.frame-item.current { background: rgba(90,122,150,0.15); color: #8aaac6; }
 		.frame-item.done { color: #5a8c6f; }
-		.student-chip { padding: 4px 8px; font-size: 11px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: #888; cursor: pointer; transition: all 0.15s; display: flex; justify-content: space-between; align-items: center; }
+		.student-chip { padding: 5px 8px; font-size: 11px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: #888; cursor: pointer; transition: all 0.15s; display: flex; justify-content: space-between; align-items: center; gap: 4px; }
 		.student-chip:hover { border-color: rgba(255,255,255,0.15); color: #bbb; }
 		.student-chip.selected { border-color: rgba(230,200,76,0.4); color: #e6c84c; background: rgba(230,200,76,0.05); }
 		.btn { padding: 6px 14px; border-radius: 4px; font-size: 12px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #ccc; transition: all 0.15s; }
@@ -56,13 +53,22 @@
 		.btn-primary:hover { background: rgba(90,122,150,0.25); }
 		.btn-danger { background: rgba(140,90,90,0.15); border-color: rgba(140,90,90,0.3); color: #c8a0a0; }
 		.btn-danger:hover { background: rgba(140,90,90,0.25); }
+		.arrow-btn { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #555; cursor: pointer; border-radius: 2px; transition: all 0.1s; flex-shrink: 0; }
+		.arrow-btn:hover { color: #aaa; background: rgba(255,255,255,0.08); }
+		.ctx-menu { position: fixed; background: #1e1e1e; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 4px 0; z-index: 200; min-width: 140px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+		.ctx-menu.hidden { display: none; }
+		.ctx-item { padding: 6px 14px; font-size: 12px; color: #bbb; cursor: pointer; transition: all 0.1s; }
+		.ctx-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+		.ctx-item.danger { color: #c8a0a0; }
+		.ctx-item.danger:hover { background: rgba(140,90,90,0.15); }
+		.ctx-sep { height: 1px; background: rgba(255,255,255,0.06); margin: 4px 0; }
 	</style>
 </head>
 <body>
 	<div id="welcome-screen" class="h-screen flex flex-col items-center justify-center">
 		<div class="text-center">
 			<h1 class="text-xl font-medium text-white/80 mb-2">坐姿标注工具</h1>
-			<p class="text-xs text-white/30 mb-8 font-mono">Annotation Tool v1.0</p>
+			<p class="text-xs text-white/30 mb-8 font-mono">Annotation Tool v1.1</p>
 			<button id="btn-select-folder" class="btn btn-primary px-6 py-2.5 text-sm" onclick="selectFolder()">
 				选择数据文件夹
 			</button>
@@ -90,7 +96,7 @@
 					<div class="flex-1 flex flex-col min-w-0">
 						<div class="flex items-center justify-between px-2 py-1">
 							<span class="text-[10px] font-mono text-white/30">前视角 (主标注区)</span>
-							<span class="text-[10px] font-mono text-white/20" id="front-filename"></span>
+							<button class="text-[10px] text-white/20 hover:text-white/50 transition-colors" onclick="resetFrontView()" title="重置前视角缩放 (R)">重置视图</button>
 						</div>
 						<div id="front-container" class="canvas-container flex-1" oncontextmenu="return false;">
 							<canvas id="front-canvas"></canvas>
@@ -99,7 +105,7 @@
 					<div class="flex-1 flex flex-col min-w-0">
 						<div class="flex items-center justify-between px-2 py-1">
 							<span class="text-[10px] font-mono text-white/30">后视角 (参考)</span>
-							<span class="text-[10px] font-mono text-white/20" id="back-filename"></span>
+							<button class="text-[10px] text-white/20 hover:text-white/50 transition-colors" onclick="resetBackView()" title="重置后视角缩放">重置视图</button>
 						</div>
 						<div id="back-container" class="canvas-container flex-1" oncontextmenu="return false;">
 							<canvas id="back-canvas"></canvas>
@@ -114,7 +120,7 @@
 						<button class="btn text-[10px] px-3 py-1" onclick="nextFrame()" id="btn-next">下一帧</button>
 					</div>
 					<div class="flex items-center gap-2">
-						<span class="text-[10px] font-mono text-white/20">快捷键: 拖拽画框 | C 复制 | Del 删除 | ← → 翻帧</span>
+						<span class="text-[10px] font-mono text-white/20">画框 | C复制 | Del删除 | Ctrl+Z撤销 | R重置视图 | ←→翻帧</span>
 					</div>
 				</div>
 			</div>
@@ -131,7 +137,7 @@
 						<span class="text-[10px] font-mono text-white/20" id="student-count">0</span>
 					</div>
 				</div>
-				<div id="student-list" class="overflow-y-auto p-1" style="min-height: 120px; max-height: 200px;"></div>
+				<div id="student-list" class="overflow-y-auto p-1" style="min-height: 120px; max-height: 240px;"></div>
 			</div>
 		</div>
 	</div>
@@ -186,6 +192,17 @@
 		</div>
 	</div>
 
+	<div id="ctx-menu" class="ctx-menu hidden">
+		<div class="ctx-item" onclick="ctxEditLabel()">编辑标签</div>
+		<div class="ctx-sep"></div>
+		<div class="ctx-item" onclick="ctxMoveUp()">上移</div>
+		<div class="ctx-item" onclick="ctxMoveDown()">下移</div>
+		<div class="ctx-sep"></div>
+		<div class="ctx-item danger" onclick="ctxDelete()">删除标注</div>
+		<div class="ctx-sep"></div>
+		<div class="ctx-item" onclick="resetFrontView(); hideCtxMenu();">重置视图</div>
+	</div>
+
 	<script>
 		const state = {
 			folderPath: null,
@@ -213,13 +230,151 @@
 			resizeBboxIdx: -1,
 			frontView: { scale: 1, tx: 0, ty: 0, fitScale: 1 },
 			backView: { scale: 1, tx: 0, ty: 0, fitScale: 1 },
-			isPanning: false,
-			panTarget: null,
-			panStart: { x: 0, y: 0 },
+			undoStack: [],
+			redoStack: [],
+			ctxTargetIdx: -1,
 		};
 
 		let frontCanvas, backCanvas, frontCtx, backCtx;
 		let frontContainer, backContainer;
+
+		// ========== Undo / Redo ==========
+
+		function pushUndo() {
+			state.undoStack.push(JSON.parse(JSON.stringify(state.bboxes)));
+			if (state.undoStack.length > 100) state.undoStack.shift();
+			state.redoStack = [];
+		}
+
+		function undo() {
+			if (state.undoStack.length === 0) return;
+			state.redoStack.push(JSON.parse(JSON.stringify(state.bboxes)));
+			state.bboxes = state.undoStack.pop();
+			state.selectedBboxIdx = -1;
+			closeLabelPanel();
+			recalcNextStudentNum();
+			renderFront();
+			updateStudentList();
+		}
+
+		function redo() {
+			if (state.redoStack.length === 0) return;
+			state.undoStack.push(JSON.parse(JSON.stringify(state.bboxes)));
+			state.bboxes = state.redoStack.pop();
+			state.selectedBboxIdx = -1;
+			closeLabelPanel();
+			recalcNextStudentNum();
+			renderFront();
+			updateStudentList();
+		}
+
+		// ========== Student ID Renumbering ==========
+
+		function renumberStudents() {
+			state.bboxes.forEach((bb, i) => {
+				bb.student_id = `S${String(i + 1).padStart(2, '0')}`;
+			});
+			state.nextStudentNum = state.bboxes.length + 1;
+		}
+
+		function recalcNextStudentNum() {
+			let maxNum = 0;
+			state.bboxes.forEach(bb => {
+				const m = bb.student_id.match(/^S(\d+)$/);
+				if (m) maxNum = Math.max(maxNum, parseInt(m[1]));
+			});
+			state.nextStudentNum = maxNum + 1;
+		}
+
+		// ========== Reset View ==========
+
+		function resetFrontView() {
+			const cw = frontContainer.clientWidth;
+			const ch = frontContainer.clientHeight;
+			fitImageToCanvas(state.frontImgW, state.frontImgH, cw, ch, state.frontView);
+			renderFront();
+		}
+
+		function resetBackView() {
+			const bcw = backContainer.clientWidth;
+			const bch = backContainer.clientHeight;
+			fitImageToCanvas(state.backImgW, state.backImgH, bcw, bch, state.backView);
+			renderBack();
+		}
+
+		// ========== Context Menu ==========
+
+		function showCtxMenu(x, y) {
+			const menu = document.getElementById('ctx-menu');
+			menu.classList.remove('hidden');
+			menu.style.left = x + 'px';
+			menu.style.top = y + 'px';
+			const mw = 140, mh = 180;
+			if (x + mw > window.innerWidth) menu.style.left = (x - mw) + 'px';
+			if (y + mh > window.innerHeight) menu.style.top = (y - mh) + 'px';
+		}
+
+		function hideCtxMenu() {
+			document.getElementById('ctx-menu').classList.add('hidden');
+		}
+
+		function ctxEditLabel() {
+			hideCtxMenu();
+			if (state.ctxTargetIdx >= 0) {
+				state.selectedBboxIdx = state.ctxTargetIdx;
+				openLabelPanel(state.ctxTargetIdx);
+				renderFront();
+				updateStudentList();
+			}
+		}
+
+		function ctxDelete() {
+			hideCtxMenu();
+			if (state.ctxTargetIdx >= 0) {
+				pushUndo();
+				state.bboxes.splice(state.ctxTargetIdx, 1);
+				renumberStudents();
+				state.selectedBboxIdx = -1;
+				closeLabelPanel();
+				renderFront();
+				updateStudentList();
+			}
+		}
+
+		function ctxMoveUp() {
+			hideCtxMenu();
+			if (state.ctxTargetIdx > 0) {
+				pushUndo();
+				const i = state.ctxTargetIdx;
+				[state.bboxes[i - 1], state.bboxes[i]] = [state.bboxes[i], state.bboxes[i - 1]];
+				renumberStudents();
+				state.selectedBboxIdx = i - 1;
+				renderFront();
+				updateStudentList();
+			}
+		}
+
+		function ctxMoveDown() {
+			hideCtxMenu();
+			if (state.ctxTargetIdx >= 0 && state.ctxTargetIdx < state.bboxes.length - 1) {
+				pushUndo();
+				const i = state.ctxTargetIdx;
+				[state.bboxes[i], state.bboxes[i + 1]] = [state.bboxes[i + 1], state.bboxes[i]];
+				renumberStudents();
+				state.selectedBboxIdx = i + 1;
+				renderFront();
+				updateStudentList();
+			}
+		}
+
+		document.addEventListener('click', e => {
+			const menu = document.getElementById('ctx-menu');
+			if (!menu.classList.contains('hidden') && !menu.contains(e.target)) {
+				hideCtxMenu();
+			}
+		});
+
+		// ========== Folder Selection ==========
 
 		async function selectFolder() {
 			try {
@@ -245,6 +400,8 @@
 				console.error(e);
 			}
 		}
+
+		// ========== Canvas Setup ==========
 
 		function initCanvases() {
 			frontCanvas = document.getElementById('front-canvas');
@@ -348,10 +505,14 @@
 			};
 		}
 
+		// ========== Frame Loading ==========
+
 		async function loadFrame(index) {
 			state.currentIndex = index;
 			state.bboxes = JSON.parse(JSON.stringify(state.annotations[index] || []));
 			state.selectedBboxIdx = -1;
+			state.undoStack = [];
+			state.redoStack = [];
 			closeLabelPanel();
 
 			const frontImg = new Image();
@@ -390,12 +551,15 @@
 			const bch = backContainer.clientHeight;
 			fitImageToCanvas(state.backImgW, state.backImgH, bcw, bch, state.backView);
 
+			recalcNextStudentNum();
 			renderFront();
 			renderBack();
 			updateFrameListHighlight();
 			updateStudentList();
 			updateHeaderInfo();
 		}
+
+		// ========== Rendering ==========
 
 		function renderFront() {
 			const dpr = window.devicePixelRatio || 1;
@@ -419,6 +583,15 @@
 				frontCtx.fillStyle = isSelected ? 'rgba(230,200,76,0.12)' : 'rgba(90,140,111,0.08)';
 				frontCtx.fillRect(bb.x1, bb.y1, bb.x2 - bb.x1, bb.y2 - bb.y1);
 				frontCtx.strokeRect(bb.x1, bb.y1, bb.x2 - bb.x1, bb.y2 - bb.y1);
+
+				if (isSelected) {
+					const hs = 4 / (v.fitScale * v.scale);
+					frontCtx.fillStyle = '#e6c84c';
+					const handles = getResizeHandles(bb, 0);
+					handles.forEach(h => {
+						frontCtx.fillRect(h.x - hs, h.y - hs, hs * 2, hs * 2);
+					});
+				}
 
 				const fontSize = Math.max(10, 12 / (v.fitScale * v.scale));
 				frontCtx.font = `${fontSize}px Inter, sans-serif`;
@@ -463,6 +636,8 @@
 			backCtx.restore();
 		}
 
+		// ========== Front Canvas Interaction ==========
+
 		function setupFrontInteraction() {
 			const container = frontContainer;
 
@@ -480,6 +655,7 @@
 					const handles = getResizeHandles(bb, handleSize);
 					for (const h of handles) {
 						if (Math.abs(imgPt.x - h.x) < handleSize && Math.abs(imgPt.y - h.y) < handleSize) {
+							pushUndo();
 							state.resizing = true;
 							state.resizeBboxIdx = i;
 							state.resizeHandle = h.dir;
@@ -495,6 +671,7 @@
 				for (let i = state.bboxes.length - 1; i >= 0; i--) {
 					const bb = state.bboxes[i];
 					if (imgPt.x >= bb.x1 && imgPt.x <= bb.x2 && imgPt.y >= bb.y1 && imgPt.y <= bb.y2) {
+						pushUndo();
 						state.dragging = true;
 						state.dragBboxIdx = i;
 						state.dragOffset = { x: imgPt.x - bb.x1, y: imgPt.y - bb.y1 };
@@ -594,6 +771,7 @@
 					const h = ey - sy;
 
 					if (w > 5 && h > 5) {
+						pushUndo();
 						const bb = {
 							student_id: `S${String(state.nextStudentNum).padStart(2, '0')}`,
 							x1: Math.round(sx),
@@ -636,7 +814,32 @@
 					}
 				}
 			});
+
+			container.addEventListener('contextmenu', e => {
+				e.preventDefault();
+				const rect = container.getBoundingClientRect();
+				const mx = e.clientX - rect.left;
+				const my = e.clientY - rect.top;
+				const imgPt = canvasToImg(mx, my, state.frontView);
+
+				for (let i = state.bboxes.length - 1; i >= 0; i--) {
+					const bb = state.bboxes[i];
+					if (imgPt.x >= bb.x1 && imgPt.x <= bb.x2 && imgPt.y >= bb.y1 && imgPt.y <= bb.y2) {
+						state.ctxTargetIdx = i;
+						state.selectedBboxIdx = i;
+						renderFront();
+						updateStudentList();
+						showCtxMenu(e.clientX, e.clientY);
+						return;
+					}
+				}
+
+				state.ctxTargetIdx = -1;
+				showCtxMenu(e.clientX, e.clientY);
+			});
 		}
+
+		// ========== Bbox Helpers ==========
 
 		function getResizeHandles(bb, size) {
 			const mx = (bb.x1 + bb.x2) / 2;
@@ -657,6 +860,8 @@
 			if (bb.x1 > bb.x2) { const t = bb.x1; bb.x1 = bb.x2; bb.x2 = t; }
 			if (bb.y1 > bb.y2) { const t = bb.y1; bb.y1 = bb.y2; bb.y2 = t; }
 		}
+
+		// ========== Label Panel ==========
 
 		function openLabelPanel(idx) {
 			const bb = state.bboxes[idx];
@@ -768,7 +973,9 @@
 
 		function deleteSelected() {
 			if (state.selectedBboxIdx < 0) return;
+			pushUndo();
 			state.bboxes.splice(state.selectedBboxIdx, 1);
+			renumberStudents();
 			state.selectedBboxIdx = -1;
 			closeLabelPanel();
 			renderFront();
@@ -788,6 +995,8 @@
 			}
 		}
 
+		// ========== Student List ==========
+
 		function updateStudentList() {
 			const list = document.getElementById('student-list');
 			list.innerHTML = '';
@@ -799,17 +1008,63 @@
 			state.bboxes.forEach((bb, idx) => {
 				const chip = document.createElement('div');
 				chip.className = `student-chip mb-1 ${idx === state.selectedBboxIdx ? 'selected' : ''}`;
-				const info = `${bb.student_id} ${statusMap[bb.status] || ''} ${postureMap[bb.posture] || ''}`;
-				chip.innerHTML = `<span>${info}</span>`;
-				chip.onclick = () => {
+
+				const infoSpan = document.createElement('span');
+				infoSpan.className = 'truncate';
+				infoSpan.textContent = `${bb.student_id} ${statusMap[bb.status] || ''} ${postureMap[bb.posture] || ''}`;
+				infoSpan.style.cursor = 'pointer';
+				infoSpan.onclick = () => {
 					state.selectedBboxIdx = idx;
 					openLabelPanel(idx);
 					renderFront();
 					updateStudentList();
 				};
+
+				const arrowDiv = document.createElement('div');
+				arrowDiv.className = 'flex flex-col gap-0 shrink-0';
+
+				const upBtn = document.createElement('div');
+				upBtn.className = 'arrow-btn';
+				upBtn.textContent = '▲';
+				upBtn.title = '上移';
+				upBtn.onclick = (e) => {
+					e.stopPropagation();
+					if (idx > 0) {
+						pushUndo();
+						[state.bboxes[idx - 1], state.bboxes[idx]] = [state.bboxes[idx], state.bboxes[idx - 1]];
+						renumberStudents();
+						state.selectedBboxIdx = idx - 1;
+						renderFront();
+						updateStudentList();
+					}
+				};
+
+				const downBtn = document.createElement('div');
+				downBtn.className = 'arrow-btn';
+				downBtn.textContent = '▼';
+				downBtn.title = '下移';
+				downBtn.onclick = (e) => {
+					e.stopPropagation();
+					if (idx < state.bboxes.length - 1) {
+						pushUndo();
+						[state.bboxes[idx], state.bboxes[idx + 1]] = [state.bboxes[idx + 1], state.bboxes[idx]];
+						renumberStudents();
+						state.selectedBboxIdx = idx + 1;
+						renderFront();
+						updateStudentList();
+					}
+				};
+
+				arrowDiv.appendChild(upBtn);
+				arrowDiv.appendChild(downBtn);
+
+				chip.appendChild(infoSpan);
+				chip.appendChild(arrowDiv);
 				list.appendChild(chip);
 			});
 		}
+
+		// ========== Frame List ==========
 
 		function buildFrameList() {
 			const list = document.getElementById('frame-list');
@@ -840,6 +1095,8 @@
 			document.getElementById('front-filename').textContent = `front_${String(state.currentIndex + 1).padStart(6, '0')}.jpg`;
 			document.getElementById('back-filename').textContent = `back_${String(state.currentIndex + 1).padStart(6, '0')}.jpg`;
 		}
+
+		// ========== Save / Load ==========
 
 		async function saveCurrentAnnotation() {
 			const annotation = {
@@ -946,25 +1203,28 @@
 				return;
 			}
 
+			pushUndo();
 			state.bboxes = JSON.parse(JSON.stringify(prevBboxes));
 			state.selectedBboxIdx = -1;
-
-			let maxNum = 0;
-			state.bboxes.forEach(bb => {
-				const m = bb.student_id.match(/^S(\d+)$/);
-				if (m) maxNum = Math.max(maxNum, parseInt(m[1]));
-			});
-			state.nextStudentNum = maxNum + 1;
+			recalcNextStudentNum();
 
 			closeLabelPanel();
 			renderFront();
 			updateStudentList();
 		}
 
+		// ========== Keyboard Shortcuts ==========
+
 		document.addEventListener('keydown', e => {
 			if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
 
-			if (e.key === 'ArrowLeft') {
+			if (e.ctrlKey && e.key === 'z') {
+				e.preventDefault();
+				undo();
+			} else if (e.ctrlKey && e.key === 'y') {
+				e.preventDefault();
+				redo();
+			} else if (e.key === 'ArrowLeft') {
 				e.preventDefault();
 				prevFrame();
 			} else if (e.key === 'ArrowRight') {
@@ -973,6 +1233,9 @@
 			} else if (e.key === 'c' || e.key === 'C') {
 				e.preventDefault();
 				copyPrevAnnotation();
+			} else if (e.key === 'r' || e.key === 'R') {
+				e.preventDefault();
+				resetFrontView();
 			} else if (e.key === 'Delete' || e.key === 'Backspace') {
 				if (state.selectedBboxIdx >= 0) {
 					e.preventDefault();
@@ -980,6 +1243,7 @@
 				}
 			} else if (e.key === 'Escape') {
 				closeLabelPanel();
+				hideCtxMenu();
 				state.selectedBboxIdx = -1;
 				renderFront();
 				updateStudentList();
