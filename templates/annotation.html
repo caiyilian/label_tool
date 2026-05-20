@@ -198,17 +198,17 @@
 			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">姿态点位</label>
 			<div id="kp-list"></div>
 			<div class="flex gap-2 mt-2">
-				<button class="btn btn-kp text-[10px] px-2 py-1 flex-1" onclick="enterKpMode()" id="btn-kp-enter">连续标注 (K)</button>
+				<button class="btn btn-kp text-[10px] px-2 py-1 flex-1" onclick="enterKpMode('front')">前视角</button>
+				<button class="btn btn-kp text-[10px] px-2 py-1 flex-1" onclick="enterKpMode('back')">后视角</button>
 				<button class="btn btn-danger text-[10px] px-2 py-1" onclick="clearKeypoints()">全部清除</button>
 			</div>
 		</div>
 		<div class="mb-3">
 			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">备注</label>
-			<input id="lp-note" type="text" class="w-full bg-[#0f0f0f] border border-white/[0.08] rounded px-2 py-1 text-xs text-white/80" placeholder="可选">
+			<input id="lp-note" type="text" class="w-full bg-[#0f0f0f] border border-white/[0.08] rounded px-2 py-1 text-xs text-white/80" placeholder="可选" oninput="autoSaveLabel()">
 		</div>
 		<div class="flex gap-2">
-			<button class="btn btn-primary flex-1 text-[11px]" onclick="confirmLabel()">确认</button>
-			<button class="btn btn-danger text-[11px] px-3" onclick="deleteSelected()">删除</button>
+			<button class="btn btn-danger text-[11px] w-full" onclick="deleteSelected()">删除此标注</button>
 		</div>
 	</div>
 
@@ -243,7 +243,8 @@
 			frontView: {scale:1,tx:0,ty:0,fitScale:1},
 			backView: {scale:1,tx:0,ty:0,fitScale:1},
 			undoStack: [], redoStack: [], ctxTargetIdx: -1,
-			kpMode: false, kpIndex: 0, kpBboxIdx: -1,
+			kpMode: false, kpIndex: 0, kpBboxIdx: -1, kpView: 'front',
+			backDrawing: false, backDrawStart: null, backDrawCurrent: null,
 		};
 
 		let frontCanvas, backCanvas, frontCtx, backCtx;
@@ -262,7 +263,7 @@
 			state.bboxes = state.undoStack.pop();
 			state.selectedBboxIdx = -1;
 			closeLabelPanel(); recalcNextStudentNum();
-			renderFront(); updateStudentList();
+			renderFront(); renderBack(); updateStudentList();
 		}
 		function redo() {
 			if (!state.redoStack.length) return;
@@ -271,7 +272,29 @@
 			state.bboxes = state.redoStack.pop();
 			state.selectedBboxIdx = -1;
 			closeLabelPanel(); recalcNextStudentNum();
-			renderFront(); updateStudentList();
+			renderFront(); renderBack(); updateStudentList();
+		}
+
+		function redoLastKp() {
+			if (!state.redoStack.length) return;
+			state.undoStack.push(JSON.parse(JSON.stringify(state.bboxes)));
+			const nextBboxes = state.redoStack.pop();
+			const bb = state.bboxes[state.kpBboxIdx];
+			const nextBb = nextBboxes[state.kpBboxIdx];
+			if (!bb || !nextBb) return;
+			if (state.kpView === 'back') {
+				bb.pose_keypoints_back = JSON.parse(JSON.stringify(nextBb.pose_keypoints_back || null));
+			} else {
+				bb.pose_keypoints = JSON.parse(JSON.stringify(nextBb.pose_keypoints || null));
+			}
+			const kps = state.kpView === 'back' ? bb.pose_keypoints_back : bb.pose_keypoints;
+			if (kps && Array.isArray(kps)) {
+				state.kpIndex = kps.findIndex(kp => !kp.visible);
+				if (state.kpIndex < 0) state.kpIndex = 0;
+			}
+			updateKpHint();
+			renderFront(); renderBack();
+			if (!document.getElementById('label-panel').classList.contains('hidden')) updateKpPanelInfo();
 		}
 
 		// ========== Student ID ==========
@@ -315,27 +338,32 @@
 		}
 		function hideCtxMenu() { document.getElementById('ctx-menu').classList.add('hidden'); }
 		function ctxEditLabel() { hideCtxMenu(); if(state.ctxTargetIdx>=0){state.selectedBboxIdx=state.ctxTargetIdx;openLabelPanel(state.ctxTargetIdx);renderFront();updateStudentList();} }
-		function ctxDelete() { hideCtxMenu(); if(state.ctxTargetIdx>=0){pushUndo();state.bboxes.splice(state.ctxTargetIdx,1);renumberStudents();state.selectedBboxIdx=-1;closeLabelPanel();renderFront();updateStudentList();} }
-		function ctxMoveUp() { hideCtxMenu(); if(state.ctxTargetIdx>0){pushUndo();const i=state.ctxTargetIdx;[state.bboxes[i-1],state.bboxes[i]]=[state.bboxes[i],state.bboxes[i-1]];renumberStudents();state.selectedBboxIdx=i-1;renderFront();updateStudentList();} }
-		function ctxMoveDown() { hideCtxMenu(); if(state.ctxTargetIdx>=0&&state.ctxTargetIdx<state.bboxes.length-1){pushUndo();const i=state.ctxTargetIdx;[state.bboxes[i],state.bboxes[i+1]]=[state.bboxes[i+1],state.bboxes[i]];renumberStudents();state.selectedBboxIdx=i+1;renderFront();updateStudentList();} }
+		function ctxDelete() { hideCtxMenu(); if(state.ctxTargetIdx>=0){pushUndo();state.bboxes.splice(state.ctxTargetIdx,1);renumberStudents();state.selectedBboxIdx=-1;closeLabelPanel();renderFront();renderBack();updateStudentList();} }
+		function ctxMoveUp() { hideCtxMenu(); if(state.ctxTargetIdx>0){pushUndo();const i=state.ctxTargetIdx;[state.bboxes[i-1],state.bboxes[i]]=[state.bboxes[i],state.bboxes[i-1]];renumberStudents();state.selectedBboxIdx=i-1;renderFront();renderBack();updateStudentList();} }
+		function ctxMoveDown() { hideCtxMenu(); if(state.ctxTargetIdx>=0&&state.ctxTargetIdx<state.bboxes.length-1){pushUndo();const i=state.ctxTargetIdx;[state.bboxes[i],state.bboxes[i+1]]=[state.bboxes[i+1],state.bboxes[i]];renumberStudents();state.selectedBboxIdx=i+1;renderFront();renderBack();updateStudentList();} }
 		document.addEventListener('click', e => { const m=document.getElementById('ctx-menu'); if(!m.classList.contains('hidden')&&!m.contains(e.target)) hideCtxMenu(); });
 
 		// ========== Keypoint Mode ==========
-		function enterKpMode() {
+		function enterKpMode(view) {
+			view = view || 'front';
 			if (state.selectedBboxIdx < 0) return;
 			const bb = state.bboxes[state.selectedBboxIdx];
 			if (!bb) return;
-			if (!bb.pose_keypoints || !Array.isArray(bb.pose_keypoints)) {
-				bb.pose_keypoints = KP_NAMES.map(n => ({name:n, x:0, y:0, visible:false}));
+			if (view === 'back' && !bb.back_bbox) {
+				showTimedToast('请先在后视角画一个框，再标注点位', 'info');
+				return;
 			}
+			const kps = view === 'back' ? (bb.pose_keypoints_back || (bb.pose_keypoints_back = KP_NAMES.map(n => ({name:n, x:0, y:0, visible:false})))) : (bb.pose_keypoints || (bb.pose_keypoints = KP_NAMES.map(n => ({name:n, x:0, y:0, visible:false}))));
 			state.kpMode = true;
-			state.kpIndex = bb.pose_keypoints.findIndex(kp => !kp.visible);
+			state.kpView = view;
+			state.kpIndex = kps.findIndex(kp => !kp.visible);
 			if (state.kpIndex < 0) state.kpIndex = 0;
 			state.kpBboxIdx = state.selectedBboxIdx;
-			frontContainer.style.cursor = 'crosshair';
+			const container = view === 'back' ? backContainer : frontContainer;
+			container.style.cursor = 'crosshair';
 			closeLabelPanel();
 			updateKpHint();
-			renderFront();
+			renderFront(); renderBack();
 		}
 
 		function exitKpMode() {
@@ -344,44 +372,50 @@
 			state.kpBboxIdx = -1;
 			document.getElementById('kp-hint').classList.add('hidden');
 			frontContainer.style.cursor = 'crosshair';
-			renderFront();
+			backContainer.style.cursor = 'default';
+			renderFront(); renderBack();
 		}
 
 		function updateKpHint() {
 			const hint = document.getElementById('kp-hint');
 			if (!state.kpMode) { hint.classList.add('hidden'); return; }
 			hint.classList.remove('hidden');
-			hint.textContent = `点位标注: ${KP_LABELS[state.kpIndex]} (${state.kpIndex+1}/8) — 左键放置 | 右键跳过 | Esc退出`;
+			const viewLabel = state.kpView === 'back' ? '后视角' : '前视角';
+			hint.textContent = `[${viewLabel}] 点位标注: ${KP_LABELS[state.kpIndex]} (${state.kpIndex+1}/8) — 左键放置 | 右键跳过 | Esc退出`;
 		}
 
 		function placeKp(imgPt) {
 			if (!state.kpMode) return;
 			const bb = state.bboxes[state.kpBboxIdx];
 			if (!bb) { exitKpMode(); return; }
+			const kps = state.kpView === 'back' ? bb.pose_keypoints_back : bb.pose_keypoints;
+			if (!kps) { exitKpMode(); return; }
 			pushUndo();
-			bb.pose_keypoints[state.kpIndex] = {name: KP_NAMES[state.kpIndex], x: Math.round(imgPt.x), y: Math.round(imgPt.y), visible: true};
+			kps[state.kpIndex] = {name: KP_NAMES[state.kpIndex], x: Math.round(imgPt.x), y: Math.round(imgPt.y), visible: true};
 			state.kpIndex++;
 			if (state.kpIndex >= KP_NAMES.length) {
 				exitKpMode();
 			} else {
-				while (state.kpIndex < KP_NAMES.length && bb.pose_keypoints[state.kpIndex].visible) state.kpIndex++;
+				while (state.kpIndex < KP_NAMES.length && kps[state.kpIndex].visible) state.kpIndex++;
 				if (state.kpIndex >= KP_NAMES.length) exitKpMode();
 				else updateKpHint();
 			}
-			renderFront();
-			if (document.getElementById('label-panel').classList.contains('hidden') === false) updateKpPanelInfo();
+			renderFront(); renderBack();
+			if (!document.getElementById('label-panel').classList.contains('hidden')) updateKpPanelInfo();
 		}
 
 		function skipKp() {
 			if (!state.kpMode) return;
 			const bb = state.bboxes[state.kpBboxIdx];
 			if (!bb) { exitKpMode(); return; }
+			const kps = state.kpView === 'back' ? bb.pose_keypoints_back : bb.pose_keypoints;
+			if (!kps) { exitKpMode(); return; }
 			pushUndo();
-			bb.pose_keypoints[state.kpIndex] = {name: KP_NAMES[state.kpIndex], x: 0, y: 0, visible: false};
+			kps[state.kpIndex] = {name: KP_NAMES[state.kpIndex], x: 0, y: 0, visible: false};
 			state.kpIndex++;
 			if (state.kpIndex >= KP_NAMES.length) exitKpMode();
-			else { while(state.kpIndex<KP_NAMES.length && bb.pose_keypoints[state.kpIndex].visible) state.kpIndex++; if(state.kpIndex>=KP_NAMES.length) exitKpMode(); else updateKpHint(); }
-			renderFront();
+			else { while(state.kpIndex<KP_NAMES.length && kps[state.kpIndex].visible) state.kpIndex++; if(state.kpIndex>=KP_NAMES.length) exitKpMode(); else updateKpHint(); }
+			renderFront(); renderBack();
 			if (!document.getElementById('label-panel').classList.contains('hidden')) updateKpPanelInfo();
 		}
 
@@ -391,14 +425,38 @@
 			if (!bb) return;
 			pushUndo();
 			bb.pose_keypoints = null;
+			bb.pose_keypoints_back = null;
 			exitKpMode();
-			renderFront();
+			renderFront(); renderBack();
 			updateKpPanelInfo();
 		}
 
+		function undoLastKp() {
+			if (!state.undoStack.length) return;
+			state.redoStack.push(JSON.parse(JSON.stringify(state.bboxes)));
+			const prevBboxes = state.undoStack.pop();
+			const bb = state.bboxes[state.kpBboxIdx];
+			const prevBb = prevBboxes[state.kpBboxIdx];
+			if (!bb || !prevBb) return;
+			if (state.kpView === 'back') {
+				bb.pose_keypoints_back = JSON.parse(JSON.stringify(prevBb.pose_keypoints_back || null));
+			} else {
+				bb.pose_keypoints = JSON.parse(JSON.stringify(prevBb.pose_keypoints || null));
+			}
+			const kps = state.kpView === 'back' ? bb.pose_keypoints_back : bb.pose_keypoints;
+			if (kps && Array.isArray(kps)) {
+				state.kpIndex = kps.findIndex(kp => !kp.visible);
+				if (state.kpIndex < 0) state.kpIndex = 0;
+			}
+			updateKpHint();
+			renderFront(); renderBack();
+			if (!document.getElementById('label-panel').classList.contains('hidden')) updateKpPanelInfo();
+		}
+
 		function getKpCount(bb) {
-			if (!bb.pose_keypoints || !Array.isArray(bb.pose_keypoints)) return {done:0, total:8};
-			return {done: bb.pose_keypoints.filter(kp=>kp.visible).length, total: 8};
+			const front = (bb.pose_keypoints && Array.isArray(bb.pose_keypoints)) ? bb.pose_keypoints.filter(kp=>kp.visible).length : 0;
+			const back = (bb.pose_keypoints_back && Array.isArray(bb.pose_keypoints_back)) ? bb.pose_keypoints_back.filter(kp=>kp.visible).length : 0;
+			return {front, back, total: 8};
 		}
 
 		function updateKpPanelInfo() {
@@ -407,10 +465,12 @@
 			if (!bb) return;
 			const list = document.getElementById('kp-list');
 			list.innerHTML = '';
-			const kps = bb.pose_keypoints || [];
+			const fkps = bb.pose_keypoints || [];
+			const bkps = bb.pose_keypoints_back || [];
 			for (let i = 0; i < 8; i++) {
-				const kp = kps[i];
-				const vis = kp && kp.visible;
+				const fk = fkps[i], bk = bkps[i];
+				const fVis = fk && fk.visible, bVis = bk && bk.visible;
+
 				const item = document.createElement('div');
 				item.className = 'kp-item';
 
@@ -422,27 +482,39 @@
 				name.className = 'kp-name';
 				name.textContent = KP_LABELS[i];
 
-				const val = document.createElement('span');
-				val.className = 'kp-val' + (vis ? ' done' : '');
-				val.textContent = vis ? '已标' : '—';
+				const fTag = document.createElement('span');
+				fTag.className = 'kp-val' + (fVis ? ' done' : '');
+				fTag.textContent = fVis ? '前' : '前—';
+				fTag.title = '前视角';
+				fTag.style.cursor = 'pointer';
+				fTag.onclick = () => enterKpModeAt(i, 'front');
 
-				const editBtn = document.createElement('span');
-				editBtn.className = 'kp-act';
-				editBtn.textContent = vis ? '改' : '标';
-				editBtn.title = vis ? '重新标注此点' : '标注此点';
-				editBtn.onclick = () => enterKpModeAt(i);
+				const bTag = document.createElement('span');
+				bTag.className = 'kp-val' + (bVis ? ' done' : '');
+				bTag.textContent = bVis ? '后' : '后—';
+				bTag.title = '后视角';
+				bTag.style.cursor = 'pointer';
+				bTag.onclick = () => enterKpModeAt(i, 'back');
 
 				item.appendChild(idx);
 				item.appendChild(name);
-				item.appendChild(val);
-				item.appendChild(editBtn);
+				item.appendChild(fTag);
+				item.appendChild(bTag);
 
-				if (vis) {
+				if (fVis) {
 					const delBtn = document.createElement('span');
 					delBtn.className = 'kp-act';
 					delBtn.textContent = '✕';
-					delBtn.title = '删除此点';
-					delBtn.onclick = () => deleteKpAt(i);
+					delBtn.title = '删除前视角此点';
+					delBtn.onclick = () => deleteKpAt(i, 'front');
+					item.appendChild(delBtn);
+				}
+				if (bVis) {
+					const delBtn = document.createElement('span');
+					delBtn.className = 'kp-act';
+					delBtn.textContent = '✕';
+					delBtn.title = '删除后视角此点';
+					delBtn.onclick = () => deleteKpAt(i, 'back');
 					item.appendChild(delBtn);
 				}
 
@@ -450,31 +522,35 @@
 			}
 		}
 
-		function enterKpModeAt(idx) {
+		function enterKpModeAt(idx, view) {
+			view = view || 'front';
 			if (state.selectedBboxIdx < 0) return;
 			const bb = state.bboxes[state.selectedBboxIdx];
 			if (!bb) return;
-			if (!bb.pose_keypoints || !Array.isArray(bb.pose_keypoints)) {
-				bb.pose_keypoints = KP_NAMES.map(n => ({name:n, x:0, y:0, visible:false}));
-			}
+			const kps = view === 'back' ? (bb.pose_keypoints_back || (bb.pose_keypoints_back = KP_NAMES.map(n => ({name:n, x:0, y:0, visible:false})))) : (bb.pose_keypoints || (bb.pose_keypoints = KP_NAMES.map(n => ({name:n, x:0, y:0, visible:false}))));
 			state.kpMode = true;
+			state.kpView = view;
 			state.kpIndex = idx;
 			state.kpBboxIdx = state.selectedBboxIdx;
-			frontContainer.style.cursor = 'crosshair';
+			const container = view === 'back' ? backContainer : frontContainer;
+			container.style.cursor = 'crosshair';
 			closeLabelPanel();
 			updateKpHint();
-			renderFront();
+			renderFront(); renderBack();
 		}
 
-		function deleteKpAt(idx) {
+		function deleteKpAt(idx, view) {
+			view = view || 'front';
 			if (state.selectedBboxIdx < 0) return;
 			const bb = state.bboxes[state.selectedBboxIdx];
-			if (!bb || !bb.pose_keypoints || !bb.pose_keypoints[idx]) return;
+			if (!bb) return;
+			const kps = view === 'back' ? bb.pose_keypoints_back : bb.pose_keypoints;
+			if (!kps || !kps[idx]) return;
 			pushUndo();
-			bb.pose_keypoints[idx].visible = false;
-			bb.pose_keypoints[idx].x = 0;
-			bb.pose_keypoints[idx].y = 0;
-			renderFront();
+			kps[idx].visible = false;
+			kps[idx].x = 0;
+			kps[idx].y = 0;
+			renderFront(); renderBack();
 			updateKpPanelInfo();
 		}
 
@@ -520,6 +596,7 @@
 			setupFrontInteraction();
 			setupPanZoom(frontContainer, state.frontView, renderFront);
 			setupPanZoom(backContainer, state.backView, renderBack);
+			setupBackInteraction();
 		}
 
 		function resizeCanvas(c, cv, v) {
@@ -592,7 +669,7 @@
 				const sm={sitting_listening:'坐听',sitting_reading:'坐读',standing:'站',left_seat:'离'};
 				const pm={normal:'✓',bad:'✗'};
 				const kc=getKpCount(bb);
-				const kpTag=kc.done>0?` [${kc.done}/8]`:'';
+				const kpTag=(kc.front+kc.back)>0?` [${kc.front}+${kc.back}]`:'';
 				frontCtx.fillText(`${bb.student_id} ${sm[bb.status]||''} ${pm[bb.posture]||''}${kpTag}`,bb.x1,bb.y1-4/(v.fitScale*v.scale));
 
 				if(bb.pose_keypoints&&Array.isArray(bb.pose_keypoints)){
@@ -638,7 +715,69 @@
 			if(!state.backImg) return;
 			const v=state.backView;
 			backCtx.save(); backCtx.translate(v.tx,v.ty); backCtx.scale(v.fitScale*v.scale,v.fitScale*v.scale);
-			backCtx.drawImage(state.backImg,0,0); backCtx.restore();
+			backCtx.drawImage(state.backImg,0,0);
+
+			state.bboxes.forEach((bb,idx)=>{
+				const sel=idx===state.selectedBboxIdx;
+				const backBb=bb.back_bbox;
+				if(backBb && sel){
+					backCtx.strokeStyle='rgba(230,200,76,0.7)';
+					backCtx.lineWidth=1.5/(v.fitScale*v.scale);
+					backCtx.fillStyle='rgba(230,200,76,0.08)';
+					backCtx.fillRect(backBb.x1,backBb.y1,backBb.x2-backBb.x1,backBb.y2-backBb.y1);
+					backCtx.strokeRect(backBb.x1,backBb.y1,backBb.x2-backBb.x1,backBb.y2-backBb.y1);
+					const hs=4/(v.fitScale*v.scale);
+					backCtx.fillStyle='#e6c84c';
+					const mx=(backBb.x1+backBb.x2)/2, my=(backBb.y1+backBb.y2)/2;
+					[{x:backBb.x1,y:backBb.y1},{x:mx,y:backBb.y1},{x:backBb.x2,y:backBb.y1},
+					 {x:backBb.x2,y:my},{x:backBb.x2,y:backBb.y2},{x:mx,y:backBb.y2},
+					 {x:backBb.x1,y:backBb.y2},{x:backBb.x1,y:my}].forEach(h=>{
+						backCtx.fillRect(h.x-hs,h.y-hs,hs*2,hs*2);
+					});
+					const fs=Math.max(10,10/(v.fitScale*v.scale));
+					backCtx.font=`${fs}px Inter, sans-serif`;
+					backCtx.fillStyle='#e6c84c';
+					backCtx.fillText(bb.student_id,backBb.x1,backBb.y1-3/(v.fitScale*v.scale));
+				}
+				if(sel && backBb && bb.pose_keypoints_back&&Array.isArray(bb.pose_keypoints_back)){
+					const lw=1.5/(v.fitScale*v.scale);
+					const r=3/(v.fitScale*v.scale);
+					KP_BONES.forEach(([a,b])=>{
+						const pa=bb.pose_keypoints_back[a], pb=bb.pose_keypoints_back[b];
+						if(pa&&pb&&pa.visible&&pb.visible){
+							backCtx.strokeStyle='rgba(140,180,220,0.8)'; backCtx.lineWidth=lw;
+							backCtx.beginPath(); backCtx.moveTo(pa.x,pa.y); backCtx.lineTo(pb.x,pb.y); backCtx.stroke();
+						}
+					});
+					bb.pose_keypoints_back.forEach(kp=>{
+						if(!kp||!kp.visible) return;
+						backCtx.fillStyle='#6aafe6'; backCtx.beginPath(); backCtx.arc(kp.x,kp.y,r,0,Math.PI*2); backCtx.fill();
+					});
+				}
+			});
+
+			if(state.kpMode && state.kpView==='back' && state.kpBboxIdx>=0){
+				const bb=state.bboxes[state.kpBboxIdx];
+				if(bb&&bb.back_bbox){
+					const bk=bb.back_bbox;
+					backCtx.strokeStyle='#e6c84c'; backCtx.lineWidth=2.5/(v.fitScale*v.scale);
+					backCtx.setLineDash([6/(v.fitScale*v.scale),3/(v.fitScale*v.scale)]);
+					backCtx.strokeRect(bk.x1,bk.y1,bk.x2-bk.x1,bk.y2-bk.y1);
+					backCtx.setLineDash([]);
+				}
+			}
+
+			if(state.backDrawing&&state.backDrawStart&&state.backDrawCurrent){
+				const sx=Math.min(state.backDrawStart.x,state.backDrawCurrent.x);
+				const sy=Math.min(state.backDrawStart.y,state.backDrawCurrent.y);
+				const ex=Math.max(state.backDrawStart.x,state.backDrawCurrent.x);
+				const ey=Math.max(state.backDrawStart.y,state.backDrawCurrent.y);
+				backCtx.strokeStyle='#8aaac6'; backCtx.lineWidth=1.5/(v.fitScale*v.scale);
+				backCtx.setLineDash([4/(v.fitScale*v.scale),4/(v.fitScale*v.scale)]);
+				backCtx.strokeRect(sx,sy,ex-sx,ey-sy); backCtx.setLineDash([]);
+			}
+
+			backCtx.restore();
 		}
 
 		// ========== Front Canvas Interaction ==========
@@ -654,6 +793,8 @@
 					const bb=state.bboxes[state.kpBboxIdx];
 					if(bb && img.x>=bb.x1&&img.x<=bb.x2&&img.y>=bb.y1&&img.y<=bb.y2){
 						placeKp(img);
+					} else {
+						exitKpMode();
 					}
 					return;
 				}
@@ -663,7 +804,7 @@
 					for(const h of getResizeHandles(bb,hs)){
 						if(Math.abs(img.x-h.x)<hs&&Math.abs(img.y-h.y)<hs){
 							pushUndo(); state.resizing=true; state.resizeBboxIdx=i; state.resizeHandle=h.dir; state.drawStart=img;
-							state.selectedBboxIdx=i; renderFront(); updateStudentList(); return;
+							state.selectedBboxIdx=i; renderFront(); renderBack(); updateStudentList(); return;
 						}
 					}
 				}
@@ -671,11 +812,11 @@
 					const bb=state.bboxes[i];
 					if(img.x>=bb.x1&&img.x<=bb.x2&&img.y>=bb.y1&&img.y<=bb.y2){
 						pushUndo(); state.dragging=true; state.dragBboxIdx=i; state.dragOffset={x:img.x-bb.x1,y:img.y-bb.y1};
-						state.selectedBboxIdx=i; c.style.cursor='move'; renderFront(); updateStudentList(); return;
+						state.selectedBboxIdx=i; c.style.cursor='move'; renderFront(); renderBack(); updateStudentList(); return;
 					}
 				}
 				state.drawing=true; state.drawStart=img; state.drawCurrent=img;
-				if(state.selectedBboxIdx>=0){state.selectedBboxIdx=-1;closeLabelPanel();renderFront();updateStudentList();}
+				if(state.selectedBboxIdx>=0){state.selectedBboxIdx=-1;closeLabelPanel();renderFront();renderBack();updateStudentList();}
 			});
 
 			c.addEventListener('mousemove',e=>{
@@ -714,7 +855,7 @@
 					const ex=Math.max(state.drawStart.x,state.drawCurrent.x),ey=Math.max(state.drawStart.y,state.drawCurrent.y);
 					if(ex-sx>5&&ey-sy>5){
 						pushUndo();
-						const bb={student_id:`S${String(state.nextStudentNum).padStart(2,'0')}`,x1:Math.round(sx),y1:Math.round(sy),x2:Math.round(ex),y2:Math.round(ey),status:'sitting_listening',posture:'normal',bad_reason:[],pose_keypoints:null,note:''};
+						const bb={student_id:`S${String(state.nextStudentNum).padStart(2,'0')}`,x1:Math.round(sx),y1:Math.round(sy),x2:Math.round(ex),y2:Math.round(ey),back_bbox:null,status:'sitting_listening',posture:'normal',bad_reason:[],pose_keypoints:null,pose_keypoints_back:null,note:''};
 						state.bboxes.push(bb); state.selectedBboxIdx=state.bboxes.length-1; state.nextStudentNum++;
 						updateStudentList(); openLabelPanel(state.selectedBboxIdx);
 					}
@@ -727,7 +868,7 @@
 				for(let i=state.bboxes.length-1;i>=0;i--){
 					const bb=state.bboxes[i];
 					if(img.x>=bb.x1&&img.x<=bb.x2&&img.y>=bb.y1&&img.y<=bb.y2){
-						state.selectedBboxIdx=i; openLabelPanel(i); renderFront(); updateStudentList(); return;
+						state.selectedBboxIdx=i; openLabelPanel(i); renderFront(); renderBack(); updateStudentList(); return;
 					}
 				}
 			});
@@ -739,12 +880,150 @@
 				for(let i=state.bboxes.length-1;i>=0;i--){
 					const bb=state.bboxes[i];
 					if(img.x>=bb.x1&&img.x<=bb.x2&&img.y>=bb.y1&&img.y<=bb.y2){
-						state.ctxTargetIdx=i; state.selectedBboxIdx=i; renderFront(); updateStudentList();
+						state.ctxTargetIdx=i; state.selectedBboxIdx=i; renderFront(); renderBack(); updateStudentList();
 						showCtxMenu(e.clientX,e.clientY,true); return;
 					}
 				}
 				state.ctxTargetIdx=-1; state.selectedBboxIdx=-1; closeLabelPanel();
 				renderFront(); updateStudentList(); showCtxMenu(e.clientX,e.clientY,false);
+			});
+		}
+
+		// ========== Back Canvas Interaction ==========
+		function setupBackInteraction() {
+			const c = backContainer;
+			let backDragging = false, backDragOffset = {x:0,y:0};
+			let backResizing = false, backResizeDir = '';
+
+			c.addEventListener('mousedown', e => {
+				if (e.button !== 0 || e.altKey) return;
+				const r = c.getBoundingClientRect();
+				const img = canvasToImg(e.clientX - r.left, e.clientY - r.top, state.backView);
+
+				if (state.kpMode && state.kpView === 'back') {
+					const bb = state.bboxes[state.kpBboxIdx];
+					const backBb = bb ? bb.back_bbox : null;
+					if (backBb && img.x >= backBb.x1 && img.x <= backBb.x2 && img.y >= backBb.y1 && img.y <= backBb.y2) {
+						placeKp(img);
+					} else {
+						exitKpMode();
+					}
+					return;
+				}
+
+				if (state.selectedBboxIdx < 0) return;
+				const bb = state.bboxes[state.selectedBboxIdx];
+				if (!bb || !bb.back_bbox) {
+					state.backDrawing = true;
+					state.backDrawStart = img;
+					state.backDrawCurrent = img;
+					return;
+				}
+
+				const bk = bb.back_bbox;
+				const hs = 8 / (state.backView.fitScale * state.backView.scale);
+				const handles = [
+					{x:bk.x1,y:bk.y1,dir:'nw'},{x:(bk.x1+bk.x2)/2,y:bk.y1,dir:'n'},{x:bk.x2,y:bk.y1,dir:'ne'},
+					{x:bk.x2,y:(bk.y1+bk.y2)/2,dir:'e'},{x:bk.x2,y:bk.y2,dir:'se'},{x:(bk.x1+bk.x2)/2,y:bk.y2,dir:'s'},
+					{x:bk.x1,y:bk.y2,dir:'sw'},{x:bk.x1,y:(bk.y1+bk.y2)/2,dir:'w'}
+				];
+				for (const h of handles) {
+					if (Math.abs(img.x-h.x)<hs && Math.abs(img.y-h.y)<hs) {
+						pushUndo(); backResizing=true; backResizeDir=h.dir; return;
+					}
+				}
+				if (img.x>=bk.x1&&img.x<=bk.x2&&img.y>=bk.y1&&img.y<=bk.y2) {
+					pushUndo(); backDragging=true;
+					backDragOffset={x:img.x-bk.x1,y:img.y-bk.y1};
+					c.style.cursor='move';
+					return;
+				}
+
+				state.backDrawing = true;
+				state.backDrawStart = img;
+				state.backDrawCurrent = img;
+			});
+
+			c.addEventListener('mousemove', e => {
+				if (state.kpMode && state.kpView === 'back') {
+					c.style.cursor = 'crosshair';
+					return;
+				}
+				const r = c.getBoundingClientRect();
+				const img = canvasToImg(e.clientX - r.left, e.clientY - r.top, state.backView);
+
+				if (state.backDrawing) {
+					state.backDrawCurrent = img;
+					renderBack();
+					return;
+				}
+
+				if (backDragging && state.selectedBboxIdx>=0) {
+					const bb = state.bboxes[state.selectedBboxIdx];
+					if (bb && bb.back_bbox) {
+						const bk=bb.back_bbox, w=bk.x2-bk.x1, h=bk.y2-bk.y1;
+						bk.x1=img.x-backDragOffset.x; bk.y1=img.y-backDragOffset.y;
+						bk.x2=bk.x1+w; bk.y2=bk.y1+h;
+						renderBack();
+					}
+					return;
+				}
+
+				if (backResizing && state.selectedBboxIdx>=0) {
+					const bb = state.bboxes[state.selectedBboxIdx];
+					if (bb && bb.back_bbox) {
+						const bk=bb.back_bbox;
+						if(backResizeDir.includes('e'))bk.x2=img.x; if(backResizeDir.includes('w'))bk.x1=img.x;
+						if(backResizeDir.includes('s'))bk.y2=img.y; if(backResizeDir.includes('n'))bk.y1=img.y;
+						if(bk.x1>bk.x2){const t=bk.x1;bk.x1=bk.x2;bk.x2=t;}
+						if(bk.y1>bk.y2){const t=bk.y1;bk.y1=bk.y2;bk.y2=t;}
+						renderBack();
+					}
+					return;
+				}
+
+				if (state.selectedBboxIdx>=0) {
+					const bb = state.bboxes[state.selectedBboxIdx];
+					if (bb && bb.back_bbox) {
+						const bk=bb.back_bbox;
+						const hs=8/(state.backView.fitScale*state.backView.scale);
+						const handles=[
+							{x:bk.x1,y:bk.y1,dir:'nw'},{x:(bk.x1+bk.x2)/2,y:bk.y1,dir:'n'},{x:bk.x2,y:bk.y1,dir:'ne'},
+							{x:bk.x2,y:(bk.y1+bk.y2)/2,dir:'e'},{x:bk.x2,y:bk.y2,dir:'se'},{x:(bk.x1+bk.x2)/2,y:bk.y2,dir:'s'},
+							{x:bk.x1,y:bk.y2,dir:'sw'},{x:bk.x1,y:(bk.y1+bk.y2)/2,dir:'w'}
+						];
+						const cursors={nw:'nw-resize',n:'n-resize',ne:'ne-resize',e:'e-resize',se:'se-resize',s:'s-resize',sw:'sw-resize',w:'w-resize'};
+						for(const h of handles){if(Math.abs(img.x-h.x)<hs&&Math.abs(img.y-h.y)<hs){c.style.cursor=cursors[h.dir];return;}}
+						if(img.x>=bk.x1&&img.x<=bk.x2&&img.y>=bk.y1&&img.y<=bk.y2){c.style.cursor='pointer';return;}
+					}
+				}
+				c.style.cursor='default';
+			});
+
+			c.addEventListener('mouseup', e => {
+				if (backDragging) { backDragging=false; c.style.cursor='default'; return; }
+				if (backResizing) { backResizing=false; backResizeDir=''; return; }
+				if (e.button!==0 || !state.backDrawing) return;
+				state.backDrawing = false;
+				const sx=Math.min(state.backDrawStart.x,state.backDrawCurrent.x);
+				const sy=Math.min(state.backDrawStart.y,state.backDrawCurrent.y);
+				const ex=Math.max(state.backDrawStart.x,state.backDrawCurrent.x);
+				const ey=Math.max(state.backDrawStart.y,state.backDrawCurrent.y);
+				if (ex-sx>5 && ey-sy>5 && state.selectedBboxIdx>=0) {
+					pushUndo();
+					state.bboxes[state.selectedBboxIdx].back_bbox={x1:Math.round(sx),y1:Math.round(sy),x2:Math.round(ex),y2:Math.round(ey)};
+					renderBack();
+				}
+				state.backDrawStart=null; state.backDrawCurrent=null;
+			});
+
+			c.addEventListener('contextmenu', e => {
+				e.preventDefault();
+				if (state.kpMode && state.kpView==='back') { skipKp(); return; }
+				if (state.selectedBboxIdx>=0) {
+					const bb=state.bboxes[state.selectedBboxIdx];
+					if (bb && bb.back_bbox) { pushUndo(); bb.back_bbox=null; bb.pose_keypoints_back=null; renderBack(); updateKpPanelInfo(); }
+				}
 			});
 		}
 
@@ -780,13 +1059,34 @@
 		}
 		function closeLabelPanel(){document.getElementById('label-panel').classList.add('hidden');}
 
-		function selectRadio(g,el){document.querySelectorAll(`#${g} .radio-btn`).forEach(b=>b.classList.remove('active'));el.classList.add('active');if(g==='lp-posture')updateBadReasonVisibility();}
+		function selectRadio(g,el){
+			document.querySelectorAll(`#${g} .radio-btn`).forEach(b=>b.classList.remove('active'));
+			el.classList.add('active');
+			if(g==='lp-posture')updateBadReasonVisibility();
+			autoSaveLabel();
+		}
 		function getRadioValue(g){const a=document.querySelector(`#${g} .radio-btn.active`);return a?a.dataset.val:null;}
 		function setRadioValue(g,v){document.querySelectorAll(`#${g} .radio-btn`).forEach(b=>{b.classList.toggle('active',b.dataset.val===v);});}
-		function toggleCheck(g,el){el.classList.toggle('active');}
+		function toggleCheck(g,el){el.classList.toggle('active');autoSaveLabel();}
 		function getCheckValues(g){return Array.from(document.querySelectorAll(`#${g} .check-btn.active`)).map(b=>b.dataset.val);}
 		function setCheckValues(g,vs){document.querySelectorAll(`#${g} .check-btn`).forEach(b=>{b.classList.toggle('active',vs.includes(b.dataset.val));});}
 		function updateBadReasonVisibility(){const p=getRadioValue('lp-posture');document.getElementById('bad-reason-section').style.opacity=p==='bad'?'1':'0.3';document.getElementById('bad-reason-section').style.pointerEvents=p==='bad'?'auto':'none';}
+
+		function autoSaveLabel() {
+			if(state.selectedBboxIdx<0) return;
+			const bb=state.bboxes[state.selectedBboxIdx]; if(!bb) return;
+			bb.status=getRadioValue('lp-status')||'sitting_listening';
+			bb.posture=getRadioValue('lp-posture')||'normal';
+			bb.bad_reason=bb.posture==='bad'?getCheckValues('lp-bad-reason'):[];
+			bb.note=document.getElementById('lp-note').value;
+			const sel=document.getElementById('lp-student-id');
+			if(sel.value!=='__new__' && sel.value!==bb.student_id){
+				const ci=state.bboxes.findIndex((b,i)=>i!==state.selectedBboxIdx&&b.student_id===sel.value);
+				if(ci>=0){const t=state.bboxes[ci];state.bboxes[ci]=bb;state.bboxes[state.selectedBboxIdx]=t;state.selectedBboxIdx=ci;renumberStudents();}
+				else{bb.student_id=sel.value;}
+			}
+			renderFront(); updateStudentList();
+		}
 
 		function confirmLabel() {
 			if(state.selectedBboxIdx<0) return;
@@ -798,11 +1098,11 @@
 			const sel=document.getElementById('lp-student-id');
 			if(sel.value==='__new__'){bb.student_id=`S${String(state.nextStudentNum).padStart(2,'0')}`;state.nextStudentNum++;}
 			else{const nv=sel.value;if(nv!==bb.student_id){const ci=state.bboxes.findIndex((b,i)=>i!==state.selectedBboxIdx&&b.student_id===nv);if(ci>=0){const t=state.bboxes[ci];state.bboxes[ci]=bb;state.bboxes[state.selectedBboxIdx]=t;state.selectedBboxIdx=ci;renumberStudents();}else{bb.student_id=nv;}}}
-			closeLabelPanel(); renderFront(); updateStudentList();
+			closeLabelPanel(); renderFront(); renderBack(); updateStudentList();
 		}
 
-		function deleteSelected(){if(state.selectedBboxIdx<0)return;pushUndo();exitKpMode();state.bboxes.splice(state.selectedBboxIdx,1);renumberStudents();state.selectedBboxIdx=-1;closeLabelPanel();renderFront();updateStudentList();}
-		function onStudentIdChange(){const s=document.getElementById('lp-student-id');if(s.value==='__new__'){const n=`S${String(state.nextStudentNum).padStart(2,'0')}`;const o=document.createElement('option');o.value=n;o.textContent=n;s.insertBefore(o,s.lastElementChild);s.value=n;state.nextStudentNum++;}}
+		function deleteSelected(){if(state.selectedBboxIdx<0)return;pushUndo();exitKpMode();state.bboxes.splice(state.selectedBboxIdx,1);renumberStudents();state.selectedBboxIdx=-1;closeLabelPanel();renderFront();renderBack();updateStudentList();}
+		function onStudentIdChange(){const s=document.getElementById('lp-student-id');if(s.value==='__new__'){const n=`S${String(state.nextStudentNum).padStart(2,'0')}`;const o=document.createElement('option');o.value=n;o.textContent=n;s.insertBefore(o,s.lastElementChild);s.value=n;state.nextStudentNum++;}autoSaveLabel();}
 
 		// ========== Student List ==========
 		function updateStudentList() {
@@ -814,16 +1114,16 @@
 				const chip=document.createElement('div');
 				chip.className=`student-chip mb-1 ${idx===state.selectedBboxIdx?'selected':''}`;
 				const info=document.createElement('span'); info.className='truncate';
-				const kc=getKpCount(bb); const kpTag=kc.done>0?` ⚙${kc.done}`:'';
+				const kc=getKpCount(bb); const kpTag=(kc.front+kc.back)>0?` ⚙${kc.front}+${kc.back}`:'';
 				info.textContent=`${bb.student_id} ${sm[bb.status]||''} ${pm[bb.posture]||''}${kpTag}`;
 				info.style.cursor='pointer';
-				info.onclick=()=>{state.selectedBboxIdx=idx;openLabelPanel(idx);renderFront();updateStudentList();};
+				info.onclick=()=>{state.selectedBboxIdx=idx;openLabelPanel(idx);renderFront();renderBack();updateStudentList();};
 				const arrowDiv=document.createElement('div'); arrowDiv.className='flex flex-col gap-0 shrink-0';
 				const isFirst=idx===0, isLast=idx===state.bboxes.length-1;
 				const up=document.createElement('div'); up.className='arrow-btn'+(isFirst?' opacity-20 pointer-events-none':''); up.textContent='▲'; up.title=isFirst?'已是第一个':'上移';
-				up.onclick=e=>{e.stopPropagation();if(idx>0){pushUndo();[state.bboxes[idx-1],state.bboxes[idx]]=[state.bboxes[idx],state.bboxes[idx-1]];renumberStudents();state.selectedBboxIdx=idx-1;renderFront();updateStudentList();}};
+				up.onclick=e=>{e.stopPropagation();if(idx>0){pushUndo();[state.bboxes[idx-1],state.bboxes[idx]]=[state.bboxes[idx],state.bboxes[idx-1]];renumberStudents();state.selectedBboxIdx=idx-1;renderFront();renderBack();updateStudentList();}};
 				const dn=document.createElement('div'); dn.className='arrow-btn'+(isLast?' opacity-20 pointer-events-none':''); dn.textContent='▼'; dn.title=isLast?'已是最后一个':'下移';
-				dn.onclick=e=>{e.stopPropagation();if(idx<state.bboxes.length-1){pushUndo();[state.bboxes[idx],state.bboxes[idx+1]]=[state.bboxes[idx+1],state.bboxes[idx]];renumberStudents();state.selectedBboxIdx=idx+1;renderFront();updateStudentList();}};
+				dn.onclick=e=>{e.stopPropagation();if(idx<state.bboxes.length-1){pushUndo();[state.bboxes[idx],state.bboxes[idx+1]]=[state.bboxes[idx+1],state.bboxes[idx]];renumberStudents();state.selectedBboxIdx=idx+1;renderFront();renderBack();updateStudentList();}};
 				arrowDiv.appendChild(up); arrowDiv.appendChild(dn);
 				chip.appendChild(info); chip.appendChild(arrowDiv); list.appendChild(chip);
 			});
@@ -847,8 +1147,10 @@
 				image_file:`front_${String(state.currentIndex+1).padStart(6,'0')}.jpg`,
 				annotations:state.bboxes.map(bb=>({
 					student_id:bb.student_id, bbox:[bb.x1,bb.y1,bb.x2,bb.y2],
+					back_bbox:bb.back_bbox?[bb.back_bbox.x1,bb.back_bbox.y1,bb.back_bbox.x2,bb.back_bbox.y2]:null,
 					status:bb.status, posture:bb.posture, bad_reason:bb.bad_reason,
 					pose_keypoints:(bb.pose_keypoints&&Array.isArray(bb.pose_keypoints))?bb.pose_keypoints:null,
+					pose_keypoints_back:(bb.pose_keypoints_back&&Array.isArray(bb.pose_keypoints_back))?bb.pose_keypoints_back:null,
 					note:bb.note||''
 				}))
 			};
@@ -863,8 +1165,10 @@
 			if(d.exists&&d.annotation){
 				state.annotations[index]=d.annotation.annotations.map(a=>({
 					student_id:a.student_id, x1:a.bbox[0], y1:a.bbox[1], x2:a.bbox[2], y2:a.bbox[3],
+					back_bbox:a.back_bbox?{x1:a.back_bbox[0],y1:a.back_bbox[1],x2:a.back_bbox[2],y2:a.back_bbox[3]}:null,
 					status:a.status, posture:a.posture, bad_reason:a.bad_reason||[],
 					pose_keypoints:(a.pose_keypoints&&Array.isArray(a.pose_keypoints))?a.pose_keypoints:null,
+					pose_keypoints_back:(a.pose_keypoints_back&&Array.isArray(a.pose_keypoints_back))?a.pose_keypoints_back:null,
 					note:a.note||''
 				}));state.annotationsLoaded[index]=true;
 			}else{state.annotations[index]=[];}}catch(e){console.error(e);state.annotations[index]=[];}
@@ -880,7 +1184,7 @@
 			const pb=state.annotations[pi]; if(!pb||!pb.length){alert('上一帧没有标注数据可复制');return;}
 			pushUndo(); exitKpMode();
 			state.bboxes=JSON.parse(JSON.stringify(pb)); state.selectedBboxIdx=-1; recalcNextStudentNum();
-			closeLabelPanel(); renderFront(); updateStudentList();
+			closeLabelPanel(); renderFront(); renderBack(); updateStudentList();
 		}
 
 		// ========== Panel Drag ==========
@@ -910,6 +1214,8 @@
 			if(state.kpMode){
 				if(e.key==='Escape'){exitKpMode();return;}
 				if(e.key==='k'||e.key==='K'){exitKpMode();return;}
+				if(e.ctrlKey&&e.key==='z'){e.preventDefault();undoLastKp();return;}
+				if(e.ctrlKey&&e.key==='y'){e.preventDefault();redoLastKp();return;}
 				return;
 			}
 			if(e.ctrlKey&&e.key==='z'){e.preventDefault();undo();}
@@ -918,10 +1224,11 @@
 			else if(e.key==='ArrowRight'){e.preventDefault();nextFrame();}
 			else if(e.key==='c'||e.key==='C'){e.preventDefault();copyPrevAnnotation();}
 			else if(e.key==='r'||e.key==='R'){e.preventDefault();resetFrontView();}
-			else if(e.key==='k'||e.key==='K'){e.preventDefault();enterKpMode();}
+			else if(e.key==='k'&&!e.shiftKey){e.preventDefault();enterKpMode('front');}
+			else if(e.key==='K'&&e.shiftKey){e.preventDefault();enterKpMode('back');}
 			else if(e.key==='Delete'||e.key==='Backspace'){if(state.selectedBboxIdx>=0){e.preventDefault();deleteSelected();}}
-			else if(e.key==='Escape'){closeLabelPanel();hideCtxMenu();exitKpMode();state.selectedBboxIdx=-1;renderFront();updateStudentList();}
-			else if(e.key==='Enter'){if(!document.getElementById('label-panel').classList.contains('hidden')){e.preventDefault();confirmLabel();}}
+			else if(e.key==='Escape'){closeLabelPanel();hideCtxMenu();exitKpMode();state.selectedBboxIdx=-1;renderFront();renderBack();updateStudentList();}
+			else if(e.key==='Enter'){/* removed - auto-save */}
 		});
 	</script>
 </body>
