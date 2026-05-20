@@ -567,7 +567,7 @@
 		// ========== Folder Selection ==========
 		async function selectFolder() {
 			try {
-				const res = await fetch('/api/select_folder', {method:'POST'});
+				const res = await fetch('/annotate/api/select_folder', {method:'POST'});
 				const data = await res.json();
 				if (data.error) { if(data.error!=='canceled') alert(data.error); return; }
 				state.folderPath = data.path; state.totalFrames = data.total_frames; state.currentIndex = 0;
@@ -635,7 +635,7 @@
 			exitKpMode(); closeLabelPanel();
 			const fi=new Image(), bi=new Image();
 			fi.crossOrigin='anonymous'; bi.crossOrigin='anonymous';
-			fi.src=`/api/frame_image/${index}/front`; bi.src=`/api/frame_image/${index}/back`;
+			fi.src=`/annotate/api/frame_image/${index}/front`; bi.src=`/annotate/api/frame_image/${index}/back`;
 			await Promise.all([new Promise((r,j)=>{fi.onload=r;fi.onerror=j;}), new Promise((r,j)=>{bi.onload=r;bi.onerror=j;})]);
 			state.frontImg=fi; state.backImg=bi;
 			state.frontImgW=fi.naturalWidth; state.frontImgH=fi.naturalHeight;
@@ -1137,7 +1137,7 @@
 		// ========== Save / Load ==========
 		async function saveCurrentAnnotation(){
 			if(state.bboxes.length===0){
-				try{await fetch('/api/save_annotation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:state.currentIndex,annotation:null})});}catch(e){}
+				try{await fetch('/annotate/api/save_annotation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:state.currentIndex,annotation:null})});}catch(e){}
 				state.annotationsLoaded[state.currentIndex]=false;
 				updateFrameListHighlight();
 				return;
@@ -1154,14 +1154,14 @@
 					note:bb.note||''
 				}))
 			};
-			try{const r=await fetch('/api/save_annotation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:state.currentIndex,annotation:ann})});
+			try{const r=await fetch('/annotate/api/save_annotation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:state.currentIndex,annotation:ann})});
 			const d=await r.json();if(d.success){state.annotations[state.currentIndex]=JSON.parse(JSON.stringify(state.bboxes));state.annotationsLoaded[state.currentIndex]=true;updateFrameListHighlight();showTimedToast('已保存','success');await loadBatchStatus();}else{showTimedToast('保存失败: '+(d.error||'未知错误'),'error');}}catch(e){console.error(e);showTimedToast('保存失败: '+e.message,'error');await loadBatchStatus();}
 		}
 
-		async function loadBatchStatus(){try{const r=await fetch('/api/batch_status');const d=await r.json();d.statuses.forEach((done,i)=>{state.annotationsLoaded[i]=done;});updateFrameListHighlight();}catch(e){console.error(e);}}
+		async function loadBatchStatus(){try{const r=await fetch('/annotate/api/batch_status');const d=await r.json();d.statuses.forEach((done,i)=>{state.annotationsLoaded[i]=done;});updateFrameListHighlight();}catch(e){console.error(e);}}
 
 		async function loadAnnotation(index){
-			try{const r=await fetch(`/api/load_annotation/${index}`);const d=await r.json();
+			try{const r=await fetch(`/annotate/api/load_annotation/${index}`);const d=await r.json();
 			if(d.exists&&d.annotation){
 				state.annotations[index]=d.annotation.annotations.map(a=>({
 					student_id:a.student_id, x1:a.bbox[0], y1:a.bbox[1], x2:a.bbox[2], y2:a.bbox[3],

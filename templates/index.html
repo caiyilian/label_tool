@@ -297,7 +297,7 @@
             btn.textContent = "加载中...";
             
             try {
-                const res = await fetch('/api/select_video', { method: 'POST' });
+				const res = await fetch('/extract/api/select_video', { method: 'POST' });
                 const data = await (res.json());
                 
                 if (data.error) {
@@ -389,7 +389,7 @@
         }
 		
 		async function selectOutput() {
-            const res = await fetch('/api/select_dir', { method: 'POST' });
+            const res = await fetch('/extract/api/select_dir', { method: 'POST' });
             const data = await res.json();
             if(!data.error) {
                 state.outputDir = data.path;
@@ -484,7 +484,7 @@
                 res_limit: res_limit
             };
 
-            await fetch('/api/start', {
+            await fetch('/extract/api/start', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
@@ -493,7 +493,7 @@
 		}
 
         async function stopMission() {
-            await fetch('/api/stop', { method: 'POST' });
+            await fetch('/extract/api/stop', { method: 'POST' });
         }
 
         let pollTimer = null;
@@ -505,7 +505,7 @@
 
             if(pollTimer) clearInterval(pollTimer);
             pollTimer = setInterval(async () => {
-                const res = await fetch('/api/status');
+                const res = await fetch('/extract/api/status');
                 const data = await res.json();
 
                 renderLogs(data.logs);

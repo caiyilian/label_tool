@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>课堂行为分析工具</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;450;500;600&display=swap" rel="stylesheet">
+	<style>
+		* { box-sizing: border-box; }
+		body { background: #0a0a0a; color: #e1e1e1; font-family: 'Inter', sans-serif; margin: 0; height: 100vh; }
+		.card { background: #141414; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 32px; cursor: pointer; transition: all 0.2s ease; }
+		.card:hover { border-color: rgba(255,255,255,0.15); background: #1a1a1a; transform: translateY(-2px); }
+		.card:active { transform: translateY(0); }
+		.icon { width: 48px; height: 48px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 16px; }
+	</style>
+</head>
+<body class="flex items-center justify-center">
+	<div class="max-w-2xl w-full px-8">
+		<div class="text-center mb-12">
+			<h1 class="text-2xl font-medium text-white/90 mb-2">课堂行为分析工具</h1>
+			<p class="text-sm text-white/30">Classroom Behavior Analysis Toolkit</p>
+		</div>
+
+		<div class="grid grid-cols-2 gap-6">
+			<div class="card" onclick="location.href='/extract/'">
+				<div class="icon" style="background: rgba(90,122,150,0.15);">
+					<span style="color: #8aaac6;">🎬</span>
+				</div>
+				<h2 class="text-base font-medium text-white/80 mb-2">视频对齐与抽帧</h2>
+				<p class="text-xs text-white/35 leading-relaxed">
+					将前后视角视频按时间对齐，逐秒抽取帧图片，输出到 forward/backward 目录，用于后续标注。
+				</p>
+				<div class="mt-4 text-[10px] font-mono text-white/20">
+					输入：前后视角视频文件<br>
+					输出：对齐后的逐秒帧图片
+				</div>
+			</div>
+
+			<div class="card" onclick="location.href='/annotate/'">
+				<div class="icon" style="background: rgba(90,140,111,0.15);">
+					<span style="color: #8ac6a0;">✏️</span>
+				</div>
+				<h2 class="text-base font-medium text-white/80 mb-2">坐姿标注</h2>
+				<p class="text-xs text-white/35 leading-relaxed">
+					对抽帧后的图片进行逐帧标注，包括学生检测框、状态标签、坐姿标签、姿态关键点。
+				</p>
+				<div class="mt-4 text-[10px] font-mono text-white/20">
+					输入：forward/backward 帧图片<br>
+					输出：标注结果 JSON 文件
+				</div>
+			</div>
+		</div>
+
+		<div class="text-center mt-10">
+			<p class="text-[10px] text-white/15">先使用"视频对齐与抽帧"生成帧图片，再使用"坐姿标注"进行标注</p>
+		</div>
+	</div>
+</body>
+</html>
