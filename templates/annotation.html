@@ -193,13 +193,13 @@
 	</div>
 
 	<div id="ctx-menu" class="ctx-menu hidden">
-		<div class="ctx-item" onclick="ctxEditLabel()">编辑标签</div>
-		<div class="ctx-sep"></div>
-		<div class="ctx-item" onclick="ctxMoveUp()">上移</div>
-		<div class="ctx-item" onclick="ctxMoveDown()">下移</div>
-		<div class="ctx-sep"></div>
-		<div class="ctx-item danger" onclick="ctxDelete()">删除标注</div>
-		<div class="ctx-sep"></div>
+		<div class="ctx-item ctx-has-target" onclick="ctxEditLabel()">编辑标签</div>
+		<div class="ctx-sep ctx-sep-target"></div>
+		<div class="ctx-item ctx-has-target" onclick="ctxMoveUp()">上移</div>
+		<div class="ctx-item ctx-has-target" onclick="ctxMoveDown()">下移</div>
+		<div class="ctx-sep ctx-sep-target"></div>
+		<div class="ctx-item ctx-has-target danger" onclick="ctxDelete()">删除标注</div>
+		<div class="ctx-sep ctx-sep-target"></div>
 		<div class="ctx-item" onclick="resetFrontView(); hideCtxMenu();">重置视图</div>
 	</div>
 
@@ -304,7 +304,7 @@
 
 		// ========== Context Menu ==========
 
-		function showCtxMenu(x, y) {
+		function showCtxMenu(x, y, hasTarget) {
 			const menu = document.getElementById('ctx-menu');
 			menu.classList.remove('hidden');
 			menu.style.left = x + 'px';
@@ -312,6 +312,13 @@
 			const mw = 140, mh = 180;
 			if (x + mw > window.innerWidth) menu.style.left = (x - mw) + 'px';
 			if (y + mh > window.innerHeight) menu.style.top = (y - mh) + 'px';
+
+			menu.querySelectorAll('.ctx-has-target').forEach(el => {
+				el.style.display = hasTarget ? '' : 'none';
+			});
+			menu.querySelectorAll('.ctx-sep-target').forEach(el => {
+				el.style.display = hasTarget ? '' : 'none';
+			});
 		}
 
 		function hideCtxMenu() {
@@ -686,6 +693,13 @@
 				state.drawing = true;
 				state.drawStart = imgPt;
 				state.drawCurrent = imgPt;
+
+				if (state.selectedBboxIdx >= 0) {
+					state.selectedBboxIdx = -1;
+					closeLabelPanel();
+					renderFront();
+					updateStudentList();
+				}
 			});
 
 			container.addEventListener('mousemove', e => {
@@ -829,13 +843,17 @@
 						state.selectedBboxIdx = i;
 						renderFront();
 						updateStudentList();
-						showCtxMenu(e.clientX, e.clientY);
+						showCtxMenu(e.clientX, e.clientY, true);
 						return;
 					}
 				}
 
 				state.ctxTargetIdx = -1;
-				showCtxMenu(e.clientX, e.clientY);
+				state.selectedBboxIdx = -1;
+				closeLabelPanel();
+				renderFront();
+				updateStudentList();
+				showCtxMenu(e.clientX, e.clientY, false);
 			});
 		}
 
@@ -963,7 +981,14 @@
 				bb.student_id = newId;
 				state.nextStudentNum++;
 			} else {
-				bb.student_id = select.value;
+				const newId = select.value;
+				if (newId !== bb.student_id) {
+					const conflictIdx = state.bboxes.findIndex((b, i) => i !== state.selectedBboxIdx && b.student_id === newId);
+					if (conflictIdx >= 0) {
+						state.bboxes[conflictIdx].student_id = bb.student_id;
+					}
+					bb.student_id = newId;
+				}
 			}
 
 			closeLabelPanel();
@@ -1023,10 +1048,13 @@
 				const arrowDiv = document.createElement('div');
 				arrowDiv.className = 'flex flex-col gap-0 shrink-0';
 
+				const isFirst = idx === 0;
+				const isLast = idx === state.bboxes.length - 1;
+
 				const upBtn = document.createElement('div');
-				upBtn.className = 'arrow-btn';
+				upBtn.className = 'arrow-btn' + (isFirst ? ' opacity-20 pointer-events-none' : '');
 				upBtn.textContent = '▲';
-				upBtn.title = '上移';
+				upBtn.title = isFirst ? '已是第一个' : '上移';
 				upBtn.onclick = (e) => {
 					e.stopPropagation();
 					if (idx > 0) {
@@ -1040,9 +1068,9 @@
 				};
 
 				const downBtn = document.createElement('div');
-				downBtn.className = 'arrow-btn';
+				downBtn.className = 'arrow-btn' + (isLast ? ' opacity-20 pointer-events-none' : '');
 				downBtn.textContent = '▼';
-				downBtn.title = '下移';
+				downBtn.title = isLast ? '已是最后一个' : '下移';
 				downBtn.onclick = (e) => {
 					e.stopPropagation();
 					if (idx < state.bboxes.length - 1) {
