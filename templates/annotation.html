@@ -98,6 +98,20 @@
 		</div>
 	</div>
 
+	<div id="folder-error-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden">
+		<div class="bg-[#1a1a1a] border border-white/10 rounded-lg p-6 max-w-md w-full mx-4">
+			<h3 class="text-sm font-medium text-white/80 mb-3">文件夹结构错误</h3>
+			<p class="text-xs text-white/50 mb-4" id="folder-error-msg"></p>
+			<div class="flex justify-center mb-4">
+				<img src="/annotate/templates/folder_example.png" alt="文件夹结构示例" class="max-w-full rounded border border-white/10" style="max-height: 300px;">
+			</div>
+			<p class="text-[10px] text-white/30 text-center mb-4">目标文件夹需要包含：存放前摄像头图片的 <span class="text-white/60">forward</span> 和存放后摄像头图片的 <span class="text-white/60">backward</span></p>
+			<div class="flex justify-center">
+				<button class="btn btn-primary px-6 py-2 text-sm" onclick="closeFolderError()">确认</button>
+			</div>
+		</div>
+	</div>
+
 	<div id="main-screen" class="hidden h-screen flex flex-col">
 		<header class="flex items-center justify-between px-4 h-10 border-b border-white/[0.06] bg-[#0d0d0d] shrink-0">
 			<div class="flex items-center gap-3">
@@ -569,14 +583,31 @@
 			try {
 				const res = await fetch('/annotate/api/select_folder', {method:'POST'});
 				const data = await res.json();
-				if (data.error) { if(data.error!=='canceled') alert(data.error); return; }
+				if (data.error) {
+					if(data.error==='canceled') return;
+					if(data.error.includes('forward') || data.error.includes('backward')) {
+						showFolderError(data.error);
+					} else {
+						showTimedToast(data.error,'error');
+					}
+					return;
+				}
 				state.folderPath = data.path; state.totalFrames = data.total_frames; state.currentIndex = 0;
 				document.getElementById('welcome-screen').classList.add('hidden');
 				document.getElementById('main-screen').classList.remove('hidden');
 				document.getElementById('folder-path').textContent = data.path;
+				if (data.warning) showTimedToast(data.warning,'info');
 				initCanvases(); buildFrameList();
 				await loadBatchStatus(); await loadAnnotation(0); await loadFrame(0);
 			} catch(e) { console.error(e); }
+		}
+
+		function showFolderError(msg) {
+			document.getElementById('folder-error-msg').textContent = msg;
+			document.getElementById('folder-error-modal').classList.remove('hidden');
+		}
+		function closeFolderError() {
+			document.getElementById('folder-error-modal').classList.add('hidden');
 		}
 
 		// ========== Canvas Setup ==========

@@ -192,6 +192,8 @@ def process_videos_thread(data):
                 app_dir = os.path.dirname(os.path.abspath(__file__))
             ffmpeg_path = os.path.join(app_dir, "ffmpeg.exe")
             if not os.path.exists(ffmpeg_path):
+                ffmpeg_path = os.path.join(app_dir, "ffmpeg")
+            if not os.path.exists(ffmpeg_path):
                 ffmpeg_path = "ffmpeg"
             cmd = [ffmpeg_path, "-y", "-i", video_path, "-vf", filter_str, "-vsync", "0", "-q:v", "2", out_pattern]
             creationflags = 0
@@ -301,8 +303,21 @@ def annotate_get_frame_list():
     global annotate_front_files, annotate_back_files
     front_dir = os.path.join(annotate_data_folder, "forward")
     back_dir = os.path.join(annotate_data_folder, "backward")
-    annotate_front_files = sorted(glob.glob(os.path.join(front_dir, "front_*.jpg")))
-    annotate_back_files = sorted(glob.glob(os.path.join(back_dir, "back_*.jpg")))
+    front_all = sorted(glob.glob(os.path.join(front_dir, "front_*.jpg")))
+    back_all = sorted(glob.glob(os.path.join(back_dir, "back_*.jpg")))
+    front_map = {}
+    for f in front_all:
+        name = os.path.basename(f)
+        num = name.replace("front_", "").replace(".jpg", "")
+        front_map[num] = f
+    back_map = {}
+    for f in back_all:
+        name = os.path.basename(f)
+        num = name.replace("back_", "").replace(".jpg", "")
+        back_map[num] = f
+    common_nums = sorted(set(front_map.keys()) & set(back_map.keys()))
+    annotate_front_files = [front_map[n] for n in common_nums]
+    annotate_back_files = [back_map[n] for n in common_nums]
     return len(annotate_front_files)
 
 def annotate_get_annotations_dir():
@@ -315,6 +330,14 @@ def annotate_get_annotations_dir():
 def annotate_index():
     return render_template('annotation.html')
 
+@annotate_bp.route('/templates/<path:filename>')
+def annotate_templates(filename):
+    if getattr(sys, 'frozen', False):
+        templates_dir = os.path.join(sys._MEIPASS, 'templates')
+    else:
+        templates_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
+    return send_file(os.path.join(templates_dir, filename))
+
 @annotate_bp.route('/api/select_folder', methods=['POST'])
 def annotate_select_folder():
     global annotate_data_folder
@@ -326,22 +349,29 @@ def annotate_select_folder():
         return jsonify({"error": "canceled"})
     forward_dir = os.path.join(folder, "forward")
     backward_dir = os.path.join(folder, "backward")
-    if not os.path.isdir(forward_dir):
-        return jsonify({"error": f"所选文件夹中没有 forward 子目录\n当前路径: {folder}"})
-    if not os.path.isdir(backward_dir):
-        return jsonify({"error": f"所选文件夹中没有 backward 子目录\n当前路径: {folder}"})
+    has_forward = os.path.isdir(forward_dir)
+    has_backward = os.path.isdir(backward_dir)
+    if not has_forward and not has_backward:
+        return jsonify({"error": f"缺少 forward 和 backward 子目录\n当前路径: {folder}"})
+    if not has_forward:
+        return jsonify({"error": f"缺少 forward 子目录（存放前摄像头图片）\n当前路径: {folder}"})
+    if not has_backward:
+        return jsonify({"error": f"缺少 backward 子目录（存放后摄像头图片）\n当前路径: {folder}"})
     front_imgs = sorted(glob.glob(os.path.join(forward_dir, "front_*.jpg")))
     back_imgs = sorted(glob.glob(os.path.join(backward_dir, "back_*.jpg")))
     if len(front_imgs) == 0:
         return jsonify({"error": "forward 目录中没有找到 front_*.jpg 图片"})
     if len(back_imgs) == 0:
         return jsonify({"error": "backward 目录中没有找到 back_*.jpg 图片"})
-    if len(front_imgs) != len(back_imgs):
-        return jsonify({"error": f"前后视角图片数量不一致！\nforward: {len(front_imgs)} 张\nbackward: {len(back_imgs)} 张"})
     annotate_data_folder = folder
-    annotate_get_frame_list()
+    matched_count = annotate_get_frame_list()
     annotate_get_annotations_dir()
-    return jsonify({"path": folder, "total_frames": len(annotate_front_files), "forward_dir": forward_dir, "backward_dir": backward_dir})
+    if matched_count == 0:
+        return jsonify({"error": f"前后视角没有匹配的图片！\nforward: {len(front_imgs)} 张\nbackward: {len(back_imgs)} 张\n请检查文件名编号是否一致"})
+    warning = ""
+    if len(front_imgs) != matched_count or len(back_imgs) != matched_count:
+        warning = f"注意：forward {len(front_imgs)} 张，backward {len(back_imgs)} 张，匹配成功 {matched_count} 张"
+    return jsonify({"path": folder, "total_frames": matched_count, "forward_dir": forward_dir, "backward_dir": backward_dir, "warning": warning})
 
 @annotate_bp.route('/api/frame_image/<int:index>/<view>')
 def annotate_frame_image(index, view):
