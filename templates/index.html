@@ -513,10 +513,12 @@
             }
 
             const sel = document.getElementById('resolution');
+            const currentVal = sel.value;
             sel.innerHTML = '<option value="original">原分辨率 (Original)</option>';
             if(minW > 1920) sel.innerHTML += '<option value="1920x1080">FHD (1920×1080)</option>';
             if(minW > 1280) sel.innerHTML += '<option value="1280x720">HD (1280×720)</option>';
             if(minW > 854) sel.innerHTML += '<option value="854x480">SD (854×480)</option>';
+            if([...sel.options].some(o => o.value === currentVal)) sel.value = currentVal;
         }
 
         function checkState() {
