@@ -137,6 +137,9 @@ def process_videos_thread(data):
         t1_sec = data['t1_sec']
         t2_sec = data['t2_sec']
         res_limit = data.get('res_limit')
+        sample_t1 = data.get('sample_t1', 5)
+        sample_t2 = data.get('sample_t2', 1)
+        sample_t3 = data.get('sample_t3', 10)
         forward_dir = os.path.join(out, "forward")
         backward_dir = os.path.join(out, "backward")
         os.makedirs(forward_dir, exist_ok=True)
@@ -146,6 +149,7 @@ def process_videos_thread(data):
         skip_sec2 = max(0, diff)
         extract_log(f"配置读取: V1={t1_sec}s, V2={t2_sec}s")
         extract_log(f"解析指令: V1跳过 {skip_sec1}s, V2跳过 {skip_sec2}s")
+        extract_log(f"采样策略: 每 {sample_t1} 分钟采样 {sample_t2} 分钟，每 {sample_t3} 秒取 1 帧")
 
         def extract(video_path, output_folder, skip_seconds, prefix, prog_key):
             extract_state[prog_key]["status"] = "处理中"
@@ -167,7 +171,13 @@ def process_videos_thread(data):
                 total_frames_in_video = estimated_real_duration * fps
             fps_round = round(fps)
             skip_frames = int(skip_seconds * fps_round + fps_round // 2)
-            expected_total_images = int((total_frames_in_video - skip_frames) / fps_round)
+            window_period_frames = int(sample_t1 * 60 * fps_round)
+            window_duration_frames = int(sample_t2 * 60 * fps_round)
+            frame_interval = int(sample_t3 * fps_round)
+            total_duration_sec = (total_frames_in_video - skip_frames) / fps_round
+            num_windows = int(total_duration_sec / (sample_t1 * 60))
+            frames_per_window = int(sample_t2 * 60 / sample_t3)
+            expected_total_images = num_windows * frames_per_window
             if expected_total_images <= 0: expected_total_images = 1
             extract_state[prog_key]["total"] = expected_total_images
             if is_corrupted:
@@ -183,7 +193,7 @@ def process_videos_thread(data):
                     out_w = out_w if out_w % 2 == 0 else out_w - 1
             start_time = time.time()
             out_pattern = os.path.join(output_folder, f"{prefix}_%06d.jpg")
-            filter_str = f"select='gte(n,{skip_frames})*not(mod(n-{skip_frames},{fps_round}))'"
+            filter_str = f"select='gte(n,{skip_frames})*lt(mod((n-{skip_frames}),{window_period_frames}),{window_duration_frames})*not(mod((n-{skip_frames}),{frame_interval}))'"
             if out_w != int(width) or out_h != int(height):
                 filter_str += f",scale={out_w}:{out_h}"
             if getattr(sys, 'frozen', False):

@@ -208,6 +208,27 @@
 						</div>
 					</div>
 				</div>
+				<div class="divider mb-4"></div>
+				<div class="mb-6">
+					<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-2 font-medium">采样策略</label>
+					<div class="grid grid-cols-3 gap-4 mb-2">
+						<div>
+							<label class="block text-[10px] text-white/20 mb-1">采样周期 (分钟)</label>
+							<input type="number" id="sample-t1" value="5" min="1" max="60" class="w-full px-3 py-2 rounded pro-input text-[11px]" onchange="onSampleT1Change()">
+						</div>
+						<div>
+							<label class="block text-[10px] text-white/20 mb-1">窗口时长 (分钟) <span id="t2-hint" class="text-white/15">≤5</span></label>
+							<input type="number" id="sample-t2" value="1" min="1" max="5" class="w-full px-3 py-2 rounded pro-input text-[11px]" onchange="onSampleT2Change()">
+						</div>
+						<div>
+							<label class="block text-[10px] text-white/20 mb-1">采集间隔 (秒) <span id="t3-hint" class="text-white/15"><60</span></label>
+							<input type="number" id="sample-t3" value="10" min="1" max="59" class="w-full px-3 py-2 rounded pro-input text-[11px]" onchange="onSampleT3Change()">
+						</div>
+					</div>
+					<div class="flex items-center justify-between text-[10px] text-white/25">
+						<span id="sample-preview">每小时采集 72 帧，40分钟课程采集 48 帧</span>
+					</div>
+				</div>
 				<div class="divider mb-6"></div>
 				<div class="flex items-center justify-center gap-3">
 					<button id="btn-start" onclick="startMission()" disabled class="btn-action px-6 py-2 rounded text-[12px] flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
@@ -409,6 +430,55 @@
 		    checkSyncBadge();
 		}
 
+		function onSampleT1Change() {
+		    const t1 = parseInt(document.getElementById('sample-t1').value) || 1;
+		    document.getElementById('sample-t1').value = t1;
+		    const t2Input = document.getElementById('sample-t2');
+		    t2Input.max = t1;
+		    document.getElementById('t2-hint').textContent = `≤${t1}`;
+		    if (parseInt(t2Input.value) > t1) t2Input.value = t1;
+		    onSampleT2Change();
+		}
+
+		function onSampleT2Change() {
+		    const t1 = parseInt(document.getElementById('sample-t1').value) || 1;
+		    const t2 = parseInt(document.getElementById('sample-t2').value) || 1;
+		    const clampedT2 = Math.min(Math.max(t2, 1), t1);
+		    document.getElementById('sample-t2').value = clampedT2;
+		    const t3Input = document.getElementById('sample-t3');
+		    const maxT3 = clampedT2 * 60 - 1;
+		    t3Input.max = maxT3;
+		    document.getElementById('t3-hint').textContent = `<${clampedT2 * 60}`;
+		    if (parseInt(t3Input.value) > maxT3) t3Input.value = maxT3;
+		    updateSamplePreview();
+		}
+
+		function onSampleT3Change() {
+		    const t2 = parseInt(document.getElementById('sample-t2').value) || 1;
+		    const t3 = parseInt(document.getElementById('sample-t3').value) || 1;
+		    const maxT3 = t2 * 60 - 1;
+		    document.getElementById('sample-t3').value = Math.min(Math.max(t3, 1), maxT3);
+		    updateSamplePreview();
+		}
+
+		function updateSamplePreview() {
+		    const t1 = parseInt(document.getElementById('sample-t1').value) || 5;
+		    const t2 = parseInt(document.getElementById('sample-t2').value) || 1;
+		    const t3 = parseInt(document.getElementById('sample-t3').value) || 10;
+		    const framesPerHour = Math.floor((60 / t1) * (t2 * 60 / t3));
+		    const framesPer40 = Math.floor((40 / t1) * (t2 * 60 / t3));
+		    document.getElementById('sample-preview').textContent = `每小时采集 ${framesPerHour} 帧，40分钟课程采集 ${framesPer40} 帧`;
+		    updateEstimateAndResolution();
+		}
+
+		function getSampleParams() {
+		    return {
+		        t1: parseInt(document.getElementById('sample-t1').value) || 5,
+		        t2: parseInt(document.getElementById('sample-t2').value) || 1,
+		        t3: parseInt(document.getElementById('sample-t3').value) || 10
+		    };
+		}
+
         function getSec(prefix) {
             return parseInt(document.getElementById(`h${prefix}`).value)*3600 +
                    parseInt(document.getElementById(`m${prefix}`).value)*60 +
@@ -428,14 +498,18 @@
 		}
 
         function updateEstimateAndResolution() {
-            let totalFrames = 0;
             let minW = Infinity;
-            if(state.v1) { totalFrames += state.v1.total_frames; minW = Math.min(minW, state.v1.width); }
-            if(state.v2) { totalFrames += state.v2.total_frames; minW = Math.min(minW, state.v2.width); }
+            if(state.v1) minW = Math.min(minW, state.v1.width);
+            if(state.v2) minW = Math.min(minW, state.v2.width);
             
-            if(totalFrames > 0) {
-                document.getElementById('estimate-frames').textContent = totalFrames.toLocaleString();
-                document.getElementById('estimate-size').textContent = `~${((totalFrames/25)*2/1024).toFixed(2)} GB`;
+            const sampleParams = getSampleParams();
+            const framesPerHour = Math.floor((60 / sampleParams.t1) * (sampleParams.t2 * 60 / sampleParams.t3));
+            
+            if(state.v1) {
+                const durationHours = state.v1.duration / 3600;
+                const estimatedFrames = Math.floor(durationHours * framesPerHour);
+                document.getElementById('estimate-frames').textContent = estimatedFrames.toLocaleString();
+                document.getElementById('estimate-size').textContent = `~${((estimatedFrames/25)*2/1024).toFixed(2)} GB`;
             }
 
             const sel = document.getElementById('resolution');
@@ -475,13 +549,19 @@
                 res_limit = [parseInt(parts[0]), parseInt(parts[1])];
             }
 
+            onSampleT1Change();
+            const sampleParams = getSampleParams();
+
             const payload = {
                 v1: state.v1.path,
                 v2: state.v2.path,
                 out: state.outputDir,
                 t1_sec: getSec(1),
                 t2_sec: getSec(2),
-                res_limit: res_limit
+                res_limit: res_limit,
+                sample_t1: sampleParams.t1,
+                sample_t2: sampleParams.t2,
+                sample_t3: sampleParams.t3
             };
 
             await fetch('/extract/api/start', {
