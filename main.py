@@ -474,7 +474,7 @@ def process_dialogs(root):
             top.attributes('-topmost', True)
             top.withdraw()
             if req['type'] == 'video':
-                filepath = filedialog.askopenfilename(title="选择视频", filetypes=[("Video Files", "*.mp4 *.avi *.mov *.mkv")], parent=top)
+                filepath = filedialog.askopenfilename(title="选择视频", filetypes=[("Video Files", "*.mp4 *.avi *.mov *.mkv *.dav")], parent=top)
                 dialog_result['filepath'] = filepath
             elif req['type'] == 'dir':
                 d = filedialog.askdirectory(title="选择输出目录", parent=top)

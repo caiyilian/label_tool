@@ -371,7 +371,7 @@ class VideoSyncTool:
             self.set_btn_accent(self.start_btn, False)
 
     def load_video(self, video_num):
-        filepath = filedialog.askopenfilename(title=f"选择视频 {video_num}", filetypes=[("Video Files", "*.mp4 *.avi *.mov *.mkv")])
+        filepath = filedialog.askopenfilename(title=f"选择视频 {video_num}", filetypes=[("Video Files", "*.mp4 *.avi *.mov *.mkv *.dav")])
         if not filepath:
             return
             
