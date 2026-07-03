@@ -352,9 +352,9 @@
 		}
 		function hideCtxMenu() { document.getElementById('ctx-menu').classList.add('hidden'); }
 		function ctxEditLabel() { hideCtxMenu(); if(state.ctxTargetIdx>=0){state.selectedBboxIdx=state.ctxTargetIdx;openLabelPanel(state.ctxTargetIdx);renderFront();updateStudentList();} }
-		function ctxDelete() { hideCtxMenu(); if(state.ctxTargetIdx>=0){pushUndo();state.bboxes.splice(state.ctxTargetIdx,1);renumberStudents();state.selectedBboxIdx=-1;closeLabelPanel();renderFront();renderBack();updateStudentList();} }
-		function ctxMoveUp() { hideCtxMenu(); if(state.ctxTargetIdx>0){pushUndo();const i=state.ctxTargetIdx;[state.bboxes[i-1],state.bboxes[i]]=[state.bboxes[i],state.bboxes[i-1]];renumberStudents();state.selectedBboxIdx=i-1;renderFront();renderBack();updateStudentList();} }
-		function ctxMoveDown() { hideCtxMenu(); if(state.ctxTargetIdx>=0&&state.ctxTargetIdx<state.bboxes.length-1){pushUndo();const i=state.ctxTargetIdx;[state.bboxes[i],state.bboxes[i+1]]=[state.bboxes[i+1],state.bboxes[i]];renumberStudents();state.selectedBboxIdx=i+1;renderFront();renderBack();updateStudentList();} }
+		function ctxDelete() { hideCtxMenu(); if(state.ctxTargetIdx>=0){pushUndo();state.bboxes.splice(state.ctxTargetIdx,1);recalcNextStudentNum();state.selectedBboxIdx=-1;closeLabelPanel();renderFront();renderBack();updateStudentList();} }
+		function ctxMoveUp() { hideCtxMenu(); if(state.ctxTargetIdx>0){pushUndo();const i=state.ctxTargetIdx;[state.bboxes[i-1],state.bboxes[i]]=[state.bboxes[i],state.bboxes[i-1]];state.selectedBboxIdx=i-1;renderFront();renderBack();updateStudentList();} }
+		function ctxMoveDown() { hideCtxMenu(); if(state.ctxTargetIdx>=0&&state.ctxTargetIdx<state.bboxes.length-1){pushUndo();const i=state.ctxTargetIdx;[state.bboxes[i],state.bboxes[i+1]]=[state.bboxes[i+1],state.bboxes[i]];state.selectedBboxIdx=i+1;renderFront();renderBack();updateStudentList();} }
 		document.addEventListener('click', e => { const m=document.getElementById('ctx-menu'); if(!m.classList.contains('hidden')&&!m.contains(e.target)) hideCtxMenu(); });
 
 		// ========== Keypoint Mode ==========
@@ -581,7 +581,7 @@
 		// ========== Folder Selection ==========
 		async function selectFolder() {
 			try {
-				const res = await fetch('/annotate/api/select_folder', {method:'POST'});
+				const res = await fetch('/api/select_folder', {method:'POST'});
 				const data = await res.json();
 				if (data.error) {
 					if(data.error==='canceled') return;
@@ -666,7 +666,7 @@
 			exitKpMode(); closeLabelPanel();
 			const fi=new Image(), bi=new Image();
 			fi.crossOrigin='anonymous'; bi.crossOrigin='anonymous';
-			fi.src=`/annotate/api/frame_image/${index}/front`; bi.src=`/annotate/api/frame_image/${index}/back`;
+			fi.src=`/api/frame_image/${index}/front`; bi.src=`/api/frame_image/${index}/back`;
 			await Promise.all([new Promise((r,j)=>{fi.onload=r;fi.onerror=j;}), new Promise((r,j)=>{bi.onload=r;bi.onerror=j;})]);
 			state.frontImg=fi; state.backImg=bi;
 			state.frontImgW=fi.naturalWidth; state.frontImgH=fi.naturalHeight;
@@ -1072,7 +1072,9 @@
 			document.getElementById('panel-title').textContent=`学生 ${bb.student_id}`;
 			const sel=document.getElementById('lp-student-id'); sel.innerHTML='';
 			const ids=new Set(); state.bboxes.forEach(b=>ids.add(b.student_id));
-			ids.forEach(id=>{const o=document.createElement('option');o.value=id;o.textContent=id;if(id===bb.student_id)o.selected=true;sel.appendChild(o);});
+			const sorted=Array.from(ids).sort((a,b)=>parseInt(a.slice(1))-parseInt(b.slice(1)));
+			sorted.forEach(id=>{const o=document.createElement('option');o.value=id;o.textContent=id;if(id===bb.student_id)o.selected=true;sel.appendChild(o);});
+			const co=document.createElement('option');co.value='__custom__';co.textContent='✏️ 键入编号...';sel.appendChild(co);
 			const no=document.createElement('option');no.value='__new__';no.textContent='+ 新编号';sel.appendChild(no);
 			setRadioValue('lp-status',bb.status||'sitting_listening');
 			setRadioValue('lp-posture',bb.posture||'normal');
@@ -1111,12 +1113,18 @@
 			bb.bad_reason=bb.posture==='bad'?getCheckValues('lp-bad-reason'):[];
 			bb.note=document.getElementById('lp-note').value;
 			const sel=document.getElementById('lp-student-id');
-			if(sel.value!=='__new__' && sel.value!==bb.student_id){
+			if(sel.value!=='__new__' && sel.value!=='__custom__' && sel.value!==bb.student_id){
 				const ci=state.bboxes.findIndex((b,i)=>i!==state.selectedBboxIdx&&b.student_id===sel.value);
-				if(ci>=0){const t=state.bboxes[ci];state.bboxes[ci]=bb;state.bboxes[state.selectedBboxIdx]=t;state.selectedBboxIdx=ci;renumberStudents();}
+				if(ci>=0){
+					// 只交换编号，不交换框的位置
+					state.bboxes[ci].student_id=bb.student_id;
+					bb.student_id=sel.value;
+					document.getElementById('panel-title').textContent=`学生 ${bb.student_id}`;
+					sel.value=bb.student_id;
+				}
 				else{bb.student_id=sel.value;}
 			}
-			renderFront(); updateStudentList();
+			renderFront(); renderBack(); updateStudentList();
 		}
 
 		function confirmLabel() {
@@ -1128,15 +1136,21 @@
 			bb.note=document.getElementById('lp-note').value;
 			const sel=document.getElementById('lp-student-id');
 			if(sel.value==='__new__'){bb.student_id=`S${String(state.nextStudentNum).padStart(2,'0')}`;state.nextStudentNum++;}
-			else{const nv=sel.value;if(nv!==bb.student_id){const ci=state.bboxes.findIndex((b,i)=>i!==state.selectedBboxIdx&&b.student_id===nv);if(ci>=0){const t=state.bboxes[ci];state.bboxes[ci]=bb;state.bboxes[state.selectedBboxIdx]=t;state.selectedBboxIdx=ci;renumberStudents();}else{bb.student_id=nv;}}}
+			else if(sel.value==='__custom__'){/* handled in onStudentIdChange */}
+			else{const nv=sel.value;if(nv!==bb.student_id){const ci=state.bboxes.findIndex((b,i)=>i!==state.selectedBboxIdx&&b.student_id===nv);if(ci>=0){state.bboxes[ci].student_id=bb.student_id;bb.student_id=nv;}else{bb.student_id=nv;}}}
 			closeLabelPanel(); renderFront(); renderBack(); updateStudentList();
 		}
 
-		function deleteSelected(){if(state.selectedBboxIdx<0)return;pushUndo();exitKpMode();state.bboxes.splice(state.selectedBboxIdx,1);renumberStudents();state.selectedBboxIdx=-1;closeLabelPanel();renderFront();renderBack();updateStudentList();}
-		function onStudentIdChange(){const s=document.getElementById('lp-student-id');if(s.value==='__new__'){const n=`S${String(state.nextStudentNum).padStart(2,'0')}`;const o=document.createElement('option');o.value=n;o.textContent=n;s.insertBefore(o,s.lastElementChild);s.value=n;state.nextStudentNum++;}autoSaveLabel();}
+		function deleteSelected(){if(state.selectedBboxIdx<0)return;pushUndo();exitKpMode();state.bboxes.splice(state.selectedBboxIdx,1);recalcNextStudentNum();state.selectedBboxIdx=-1;closeLabelPanel();renderFront();renderBack();updateStudentList();}
+		function onStudentIdChange(){const s=document.getElementById('lp-student-id');if(s.value==='__new__'){const n=`S${String(state.nextStudentNum).padStart(2,'0')}`;const o=document.createElement('option');o.value=n;o.textContent=n;s.insertBefore(o,s.lastElementChild);s.value=n;state.nextStudentNum++;}else if(s.value==='__custom__'){const inp=prompt('输入编号数字 (如 3 代表 S03):');if(inp){const num=parseInt(inp.trim());if(!isNaN(num)&&num>=1){const nv=`S${String(num).padStart(2,'0')}`;const bb=state.bboxes[state.selectedBboxIdx];if(bb){const ci=state.bboxes.findIndex((b,i)=>i!==state.selectedBboxIdx&&b.student_id===nv);if(ci>=0){state.bboxes[ci].student_id=bb.student_id;bb.student_id=nv;document.getElementById('panel-title').textContent=`学生 ${bb.student_id}`;s.value=bb.student_id;}else{bb.student_id=nv;const o=document.createElement('option');o.value=nv;o.textContent=nv;s.insertBefore(o,s.lastElementChild);s.value=nv;}renderFront();renderBack();updateStudentList();autoSaveLabel();return;}}}s.value=state.bboxes[state.selectedBboxIdx]?.student_id||'';}autoSaveLabel();}
 
 		// ========== Student List ==========
 		function updateStudentList() {
+			// 按学生编号排序
+			const selected = state.selectedBboxIdx >= 0 ? state.bboxes[state.selectedBboxIdx] : null;
+			state.bboxes.sort((a,b)=>parseInt(a.student_id.slice(1))-parseInt(b.student_id.slice(1)));
+			if(selected) state.selectedBboxIdx = state.bboxes.indexOf(selected);
+
 			const list=document.getElementById('student-list'); list.innerHTML='';
 			document.getElementById('student-count').textContent=state.bboxes.length;
 			const sm={sitting_listening:'坐-听说',sitting_reading:'坐-读写',standing:'站立',left_seat:'离席'};
@@ -1152,9 +1166,9 @@
 				const arrowDiv=document.createElement('div'); arrowDiv.className='flex flex-col gap-0 shrink-0';
 				const isFirst=idx===0, isLast=idx===state.bboxes.length-1;
 				const up=document.createElement('div'); up.className='arrow-btn'+(isFirst?' opacity-20 pointer-events-none':''); up.textContent='▲'; up.title=isFirst?'已是第一个':'上移';
-				up.onclick=e=>{e.stopPropagation();if(idx>0){pushUndo();[state.bboxes[idx-1],state.bboxes[idx]]=[state.bboxes[idx],state.bboxes[idx-1]];renumberStudents();state.selectedBboxIdx=idx-1;renderFront();renderBack();updateStudentList();}};
+				up.onclick=e=>{e.stopPropagation();if(idx>0){pushUndo();[state.bboxes[idx-1],state.bboxes[idx]]=[state.bboxes[idx],state.bboxes[idx-1]];recalcNextStudentNum();state.selectedBboxIdx=idx-1;renderFront();renderBack();updateStudentList();}};
 				const dn=document.createElement('div'); dn.className='arrow-btn'+(isLast?' opacity-20 pointer-events-none':''); dn.textContent='▼'; dn.title=isLast?'已是最后一个':'下移';
-				dn.onclick=e=>{e.stopPropagation();if(idx<state.bboxes.length-1){pushUndo();[state.bboxes[idx],state.bboxes[idx+1]]=[state.bboxes[idx+1],state.bboxes[idx]];renumberStudents();state.selectedBboxIdx=idx+1;renderFront();renderBack();updateStudentList();}};
+				dn.onclick=e=>{e.stopPropagation();if(idx<state.bboxes.length-1){pushUndo();[state.bboxes[idx],state.bboxes[idx+1]]=[state.bboxes[idx+1],state.bboxes[idx]];recalcNextStudentNum();state.selectedBboxIdx=idx+1;renderFront();renderBack();updateStudentList();}};
 				arrowDiv.appendChild(up); arrowDiv.appendChild(dn);
 				chip.appendChild(info); chip.appendChild(arrowDiv); list.appendChild(chip);
 			});
@@ -1168,7 +1182,7 @@
 		// ========== Save / Load ==========
 		async function saveCurrentAnnotation(){
 			if(state.bboxes.length===0){
-				try{await fetch('/annotate/api/save_annotation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:state.currentIndex,annotation:null})});}catch(e){}
+				try{await fetch('/api/save_annotation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:state.currentIndex,annotation:null})});}catch(e){}
 				state.annotationsLoaded[state.currentIndex]=false;
 				updateFrameListHighlight();
 				return;
@@ -1185,14 +1199,14 @@
 					note:bb.note||''
 				}))
 			};
-			try{const r=await fetch('/annotate/api/save_annotation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:state.currentIndex,annotation:ann})});
+			try{const r=await fetch('/api/save_annotation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:state.currentIndex,annotation:ann})});
 			const d=await r.json();if(d.success){state.annotations[state.currentIndex]=JSON.parse(JSON.stringify(state.bboxes));state.annotationsLoaded[state.currentIndex]=true;updateFrameListHighlight();showTimedToast('已保存','success');await loadBatchStatus();}else{showTimedToast('保存失败: '+(d.error||'未知错误'),'error');}}catch(e){console.error(e);showTimedToast('保存失败: '+e.message,'error');await loadBatchStatus();}
 		}
 
-		async function loadBatchStatus(){try{const r=await fetch('/annotate/api/batch_status');const d=await r.json();d.statuses.forEach((done,i)=>{state.annotationsLoaded[i]=done;});updateFrameListHighlight();}catch(e){console.error(e);}}
+		async function loadBatchStatus(){try{const r=await fetch('/api/batch_status');const d=await r.json();d.statuses.forEach((done,i)=>{state.annotationsLoaded[i]=done;});updateFrameListHighlight();}catch(e){console.error(e);}}
 
 		async function loadAnnotation(index){
-			try{const r=await fetch(`/annotate/api/load_annotation/${index}`);const d=await r.json();
+			try{const r=await fetch(`/api/load_annotation/${index}`);const d=await r.json();
 			if(d.exists&&d.annotation){
 				state.annotations[index]=d.annotation.annotations.map(a=>({
 					student_id:a.student_id, x1:a.bbox[0], y1:a.bbox[1], x2:a.bbox[2], y2:a.bbox[3],
