@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>坐姿标注工具 v2</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;450;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+	<script>
+		tailwind.config = {
+			theme: {
+				extend: {
+					fontFamily: {
+						sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+						mono: ['JetBrains Mono', 'SF Mono', 'monospace'],
+					}
+				}
+			}
+		}
+	</script>
+	<style>
+		* { box-sizing: border-box; }
+		body { background: #0a0a0a; color: #e1e1e1; font-family: 'Inter', sans-serif; margin: 0; overflow: hidden; height: 100vh; }
+		::-webkit-scrollbar { width: 5px; }
+		::-webkit-scrollbar-track { background: transparent; }
+		::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+		.canvas-container { position: relative; background: #0f0f0f; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; overflow: hidden; cursor: crosshair; }
+		.canvas-container canvas { position: absolute; top: 0; left: 0; }
+		.label-panel { position: fixed; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 16px; z-index: 100; min-width: 260px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+		.label-panel.hidden { display: none; }
+		.radio-group { display: flex; flex-wrap: wrap; gap: 6px; }
+		.radio-btn { padding: 4px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); color: #aaa; font-size: 12px; cursor: pointer; transition: all 0.15s; user-select: none; }
+		.radio-btn:hover { border-color: rgba(255,255,255,0.2); color: #ddd; }
+		.radio-btn.active { background: rgba(90,122,150,0.2); border-color: rgba(90,122,150,0.5); color: #8aaac6; }
+		.check-btn { padding: 4px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); color: #aaa; font-size: 12px; cursor: pointer; transition: all 0.15s; user-select: none; }
+		.check-btn:hover { border-color: rgba(255,255,255,0.2); color: #ddd; }
+		.check-btn.active { background: rgba(140,90,90,0.2); border-color: rgba(140,90,90,0.5); color: #c8a0a0; }
+		.frame-item { padding: 4px 8px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: #555; cursor: pointer; border-radius: 3px; transition: all 0.1s; }
+		.frame-item:hover { background: rgba(255,255,255,0.04); color: #aaa; }
+		.frame-item.current { background: rgba(90,122,150,0.15); color: #8aaac6; }
+		.frame-item.done { color: #5a8c6f; }
+		.student-chip { padding: 5px 8px; font-size: 11px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: #888; cursor: pointer; transition: all 0.15s; display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+		.student-chip:hover { border-color: rgba(255,255,255,0.15); color: #bbb; }
+		.student-chip.selected { border-color: rgba(230,200,76,0.4); color: #e6c84c; background: rgba(230,200,76,0.05); }
+		.btn { padding: 6px 14px; border-radius: 4px; font-size: 12px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #ccc; transition: all 0.15s; }
+		.btn:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.18); }
+		.btn:active { transform: scale(0.97); }
+		.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+		.btn:disabled:hover { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.1); }
+		.btn-primary { background: rgba(90,122,150,0.15); border-color: rgba(90,122,150,0.3); color: #8aaac6; }
+		.btn-primary:hover { background: rgba(90,122,150,0.25); }
+		.btn-danger { background: rgba(140,90,90,0.15); border-color: rgba(140,90,90,0.3); color: #c8a0a0; }
+		.btn-danger:hover { background: rgba(140,90,90,0.25); }
+		.btn-kp { background: rgba(90,140,111,0.15); border-color: rgba(90,140,111,0.3); color: #8ac6a0; }
+		.btn-kp:hover { background: rgba(90,140,111,0.25); }
+		.arrow-btn { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #555; cursor: pointer; border-radius: 2px; transition: all 0.1s; flex-shrink: 0; }
+		.arrow-btn:hover { color: #aaa; background: rgba(255,255,255,0.08); }
+		.ctx-menu { position: fixed; background: #1e1e1e; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 4px 0; z-index: 200; min-width: 140px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+		.ctx-menu.hidden { display: none; }
+		.ctx-item { padding: 6px 14px; font-size: 12px; color: #bbb; cursor: pointer; transition: all 0.1s; }
+		.ctx-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+		.ctx-item.danger { color: #c8a0a0; }
+		.ctx-item.danger:hover { background: rgba(140,90,90,0.15); }
+		.ctx-sep { height: 1px; background: rgba(255,255,255,0.06); margin: 4px 0; }
+		.kp-hint { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); background: rgba(90,140,111,0.9); color: #fff; padding: 8px 18px; border-radius: 6px; font-size: 12px; z-index: 150; pointer-events: none; white-space: nowrap; }
+		.kp-hint.hidden { display: none; }
+		.kp-progress { display: flex; gap: 4px; margin-top: 6px; }
+		.kp-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.1); }
+		.kp-dot.done { background: #5a8c6f; }
+		.kp-dot.current { background: #e6c84c; }
+		.kp-dot.skipped { background: #555; }
+		.kp-item { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 4px; font-size: 11px; color: #666; transition: all 0.1s; }
+		.kp-item:hover { background: rgba(255,255,255,0.04); color: #aaa; }
+		.kp-item .kp-idx { width: 14px; text-align: center; font-size: 10px; color: #444; }
+		.kp-item .kp-name { flex: 1; }
+		.kp-item .kp-val { font-size: 10px; font-family: 'JetBrains Mono', monospace; color: #555; }
+		.kp-item .kp-val.done { color: #5a8c6f; }
+		.kp-item .kp-act { font-size: 10px; color: #555; cursor: pointer; padding: 1px 4px; border-radius: 2px; }
+		.kp-item .kp-act:hover { color: #bbb; background: rgba(255,255,255,0.06); }
+		.toast-container { position: fixed; top: 0; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; z-index: 999; pointer-events: none; }
+		.toast { padding: 8px 20px; border-radius: 0 0 6px 6px; font-size: 12px; color: #fff; animation: toastIn 0.3s ease, toastOut 0.4s ease 2.6s forwards; pointer-events: none; }
+		.toast.error { background: rgba(140,60,60,0.92); }
+		.toast.success { background: rgba(60,120,80,0.92); }
+		.toast.info { background: rgba(60,80,120,0.92); }
+		@keyframes toastIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+		@keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-15px); } }
+	</style>
+</head>
+<body>
+	<div id="welcome-screen" class="h-screen flex flex-col items-center justify-center">
+		<div class="text-center">
+			<h1 class="text-xl font-medium text-white/80 mb-2">坐姿标注工具</h1>
+			<p class="text-xs text-white/30 mb-8 font-mono">Annotation Tool v2.0</p>
+			<button id="btn-select-folder" class="btn btn-primary px-6 py-2.5 text-sm" onclick="selectFolder()">选择数据文件夹</button>
+			<p class="text-[10px] text-white/20 mt-4 max-w-xs">文件夹需包含 forward 和 backward 子目录，且图片数量一致</p>
+		</div>
+	</div>
+
+	<div id="folder-error-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden">
+		<div class="bg-[#1a1a1a] border border-white/10 rounded-lg p-6 max-w-md w-full mx-4">
+			<h3 class="text-sm font-medium text-white/80 mb-3">文件夹结构错误</h3>
+			<p class="text-xs text-white/50 mb-4" id="folder-error-msg"></p>
+			<div class="flex justify-center mb-4">
+				<img src="/annotate/templates/folder_example.png" alt="文件夹结构示例" class="max-w-full rounded border border-white/10" style="max-height: 300px;">
+			</div>
+			<p class="text-[10px] text-white/30 text-center mb-4">目标文件夹需要包含：存放前摄像头图片的 <span class="text-white/60">forward</span> 和存放后摄像头图片的 <span class="text-white/60">backward</span></p>
+			<div class="flex justify-center">
+				<button class="btn btn-primary px-6 py-2 text-sm" onclick="closeFolderError()">确认</button>
+			</div>
+		</div>
+	</div>
+
+	<div id="main-screen" class="hidden h-screen flex flex-col">
+		<header class="flex items-center justify-between px-4 h-10 border-b border-white/[0.06] bg-[#0d0d0d] shrink-0">
+			<div class="flex items-center gap-3">
+				<span class="text-xs font-medium text-white/70">坐姿标注 v2</span>
+				<span class="text-[10px] font-mono text-white/25" id="folder-path"></span>
+			</div>
+			<div class="flex items-center gap-4">
+				<span class="text-[10px] font-mono text-white/30" id="header-info">帧 0 / 0</span>
+				<button class="btn text-[10px] px-2 py-1" onclick="saveCurrentAnnotation()">保存</button>
+			</div>
+		</header>
+
+		<div class="flex flex-1 overflow-hidden">
+			<div class="flex-1 flex flex-col p-2 gap-2 min-w-0">
+				<div class="flex gap-2 flex-1 min-h-0">
+					<div class="flex-1 flex flex-col min-w-0">
+						<div class="flex items-center justify-between px-2 py-1">
+							<span class="text-[10px] font-mono text-white/30">前视角 (主标注区)</span>
+							<button class="text-[10px] text-white/20 hover:text-white/50 transition-colors" onclick="resetFrontView()" title="重置前视角缩放 (R)">重置视图</button>
+						</div>
+						<div id="front-container" class="canvas-container flex-1" oncontextmenu="return false;">
+							<canvas id="front-canvas"></canvas>
+						</div>
+					</div>
+					<div class="flex-1 flex flex-col min-w-0">
+						<div class="flex items-center justify-between px-2 py-1">
+							<span class="text-[10px] font-mono text-white/30">后视角 (参考)</span>
+							<button class="text-[10px] text-white/20 hover:text-white/50 transition-colors" onclick="resetBackView()" title="重置后视角缩放">重置视图</button>
+						</div>
+						<div id="back-container" class="canvas-container flex-1" oncontextmenu="return false;">
+							<canvas id="back-canvas"></canvas>
+						</div>
+					</div>
+				</div>
+				<div class="flex items-center justify-between px-2 py-1.5 bg-[#111] rounded border border-white/[0.04]">
+					<div class="flex items-center gap-2">
+						<button class="btn text-[10px] px-3 py-1" onclick="prevFrame()">上一帧</button>
+						<button class="btn btn-primary text-[10px] px-3 py-1" onclick="copyPrevAnnotation()" title="复制上一帧 (C)">复制上帧</button>
+						<button class="btn text-[10px] px-3 py-1" onclick="nextFrame()">下一帧</button>
+					</div>
+					<div class="flex items-center gap-2">
+						<span class="text-[10px] font-mono text-white/20">画框 | K点位 | C复制 | Del删除 | Ctrl+Z撤销 | R重置 | ←→翻帧</span>
+					</div>
+				</div>
+			</div>
+
+			<div class="w-56 border-l border-white/[0.06] bg-[#0d0d0d] flex flex-col shrink-0">
+				<div class="px-3 py-2 border-b border-white/[0.04]">
+					<span class="text-[10px] font-mono text-white/30 uppercase tracking-wider">帧列表</span>
+				</div>
+				<div id="frame-list" class="flex-1 overflow-y-auto p-1"></div>
+				<div class="px-3 py-2 border-t border-white/[0.04] border-b border-b-white/[0.04]">
+					<div class="flex items-center justify-between">
+						<span class="text-[10px] font-mono text-white/30 uppercase tracking-wider">本帧学生</span>
+						<span class="text-[10px] font-mono text-white/20" id="student-count">0</span>
+					</div>
+				</div>
+				<div id="student-list" class="overflow-y-auto p-1" style="min-height: 120px; max-height: 240px;"></div>
+			</div>
+		</div>
+	</div>
+
+	<div id="label-panel" class="label-panel hidden">
+		<div id="panel-header" class="flex items-center justify-between mb-3 cursor-move select-none">
+			<span class="text-xs font-medium text-white/70" id="panel-title">学生 S01</span>
+			<button class="text-white/30 hover:text-white/60 text-sm cursor-pointer" onclick="closeLabelPanel()">&times;</button>
+		</div>
+		<div class="mb-3">
+			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">学生编号</label>
+			<select id="lp-student-id" class="w-full bg-[#0f0f0f] border border-white/[0.08] rounded px-2 py-1 text-xs text-white/80" onchange="onStudentIdChange()"></select>
+		</div>
+		<div class="mb-3">
+			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">状态</label>
+			<div class="radio-group" id="lp-status">
+				<div class="radio-btn active" data-val="sitting_listening" onclick="selectRadio('lp-status', this)">坐-听说</div>
+				<div class="radio-btn" data-val="sitting_reading" onclick="selectRadio('lp-status', this)">坐-读写</div>
+				<div class="radio-btn" data-val="standing" onclick="selectRadio('lp-status', this)">站立</div>
+				<div class="radio-btn" data-val="left_seat" onclick="selectRadio('lp-status', this)">离席</div>
+			</div>
+		</div>
+		<div class="mb-3">
+			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">坐姿</label>
+			<div class="radio-group" id="lp-posture">
+				<div class="radio-btn active" data-val="normal" onclick="selectRadio('lp-posture', this)">正常</div>
+				<div class="radio-btn" data-val="bad" onclick="selectRadio('lp-posture', this)">不良</div>
+			</div>
+		</div>
+		<div class="mb-3" id="bad-reason-section">
+			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">不良原因（多选）</label>
+			<div class="radio-group" id="lp-bad-reason">
+				<div class="check-btn" data-val="head_tilt" onclick="toggleCheck('lp-bad-reason', this)">歪头</div>
+				<div class="check-btn" data-val="head_down" onclick="toggleCheck('lp-bad-reason', this)">低头</div>
+				<div class="check-btn" data-val="lean_forward" onclick="toggleCheck('lp-bad-reason', this)">俯身</div>
+				<div class="check-btn" data-val="side_lean" onclick="toggleCheck('lp-bad-reason', this)">侧身</div>
+			</div>
+		</div>
+		<div class="mb-3">
+			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">姿态点位</label>
+			<div id="kp-list"></div>
+			<div class="flex gap-2 mt-2">
+				<button class="btn btn-kp text-[10px] px-2 py-1 flex-1" onclick="enterKpMode('front')">前视角</button>
+				<button class="btn btn-kp text-[10px] px-2 py-1 flex-1" onclick="enterKpMode('back')">后视角</button>
+				<button class="btn btn-danger text-[10px] px-2 py-1" onclick="clearKeypoints()">全部清除</button>
+			</div>
+		</div>
+		<div class="mb-3">
+			<label class="block text-[10px] text-white/30 uppercase tracking-wider mb-1.5">备注</label>
+			<input id="lp-note" type="text" class="w-full bg-[#0f0f0f] border border-white/[0.08] rounded px-2 py-1 text-xs text-white/80" placeholder="可选" oninput="autoSaveLabel()">
+		</div>
+		<div class="flex gap-2">
+			<button class="btn btn-danger text-[11px] w-full" onclick="deleteSelected()">删除此标注</button>
+		</div>
+	</div>
+
+	<div id="ctx-menu" class="ctx-menu hidden">
+		<div class="ctx-item ctx-has-target" onclick="ctxEditLabel()">编辑标签</div>
+		<div class="ctx-sep ctx-sep-target"></div>
+		<div class="ctx-item ctx-has-target" id="ctx-move-up" onclick="ctxMoveUp()">上移</div>
+		<div class="ctx-item ctx-has-target" id="ctx-move-down" onclick="ctxMoveDown()">下移</div>
+		<div class="ctx-sep ctx-sep-target"></div>
+		<div class="ctx-item ctx-has-target danger" onclick="ctxDelete()">删除标注</div>
+		<div class="ctx-sep ctx-sep-target"></div>
+		<div class="ctx-item" onclick="resetFrontView(); hideCtxMenu();">重置视图</div>
+	</div>
+
+	<div id="kp-hint" class="kp-hint hidden"></div>
+	<div id="toast-container" class="toast-container"></div>
+
+	<script>
+		const KP_NAMES = ['head', 'neck', 'right_shoulder', 'right_elbow', 'right_hand', 'left_shoulder', 'left_elbow', 'left_hand'];
+		const KP_LABELS = ['头', '脖子', '右肩', '右肘', '右手', '左肩', '左肘', '左手'];
+		const KP_BONES = [[0,1],[1,2],[2,3],[3,4],[1,5],[5,6],[6,7]];
+
+		const state = {
+			folderPath: null, totalFrames: 0, currentIndex: 0,
+			annotations: {}, annotationsLoaded: {},
+			bboxes: [], selectedBboxIdx: -1, nextStudentNum: 1,
+			frontImg: null, backImg: null,
+			frontImgW: 0, frontImgH: 0, backImgW: 0, backImgH: 0,
+			drawing: false, drawStart: null, drawCurrent: null,
+			dragging: false, dragBboxIdx: -1, dragOffset: {x:0,y:0},
+			resizing: false, resizeHandle: null, resizeBboxIdx: -1,
+			frontView: {scale:1,tx:0,ty:0,fitScale:1},
+			backView: {scale:1,tx:0,ty:0,fitScale:1},
+			undoStack: [], redoStack: [], ctxTargetIdx: -1,
+			kpMode: false, kpIndex: 0, kpBboxIdx: -1, kpView: 'front',
+			backDrawing: false, backDrawStart: null, backDrawCurrent: null,
+		};
+
+		let frontCanvas, backCanvas, frontCtx, backCtx;
+		let frontContainer, backContainer;
+
+		// ========== Undo / Redo ==========
+		function pushUndo() {
+			state.undoStack.push(JSON.parse(JSON.stringify(state.bboxes)));
+			if (state.undoStack.length > 100) state.undoStack.shift();
+			state.redoStack = [];
+		}
+		function undo() {
+			if (!state.undoStack.length) return;
+			exitKpMode();
+			state.redoStack.push(JSON.parse(JSON.stringify(state.bboxes)));
+			state.bboxes = state.undoStack.pop();
+			state.selectedBboxIdx = -1;
+			closeLabelPanel(); recalcNextStudentNum();
+			renderFront(); renderBack(); updateStudentList();
+		}
+		function redo() {
+			if (!state.redoStack.length) return;
+			exitKpMode();
+			state.undoStack.push(JSON.parse(JSON.stringify(state.bboxes)));
+			state.bboxes = state.redoStack.pop();
+			state.selectedBboxIdx = -1;
+			closeLabelPanel(); recalcNextStudentNum();
+			renderFront(); renderBack(); updateStudentList();
+		}
+
+		function redoLastKp() {
+			if (!state.redoStack.length) return;
+			state.undoStack.push(JSON.parse(JSON.stringify(state.bboxes)));
+			const nextBboxes = state.redoStack.pop();
+			const bb = state.bboxes[state.kpBboxIdx];
+			const nextBb = nextBboxes[state.kpBboxIdx];
+			if (!bb || !nextBb) return;
+			if (state.kpView === 'back') {
+				bb.pose_keypoints_back = JSON.parse(JSON.stringify(nextBb.pose_keypoints_back || null));
+			} else {
+				bb.pose_keypoints = JSON.parse(JSON.stringify(nextBb.pose_keypoints || null));
+			}
+			const kps = state.kpView === 'back' ? bb.pose_keypoints_back : bb.pose_keypoints;
+			if (kps && Array.isArray(kps)) {
+				state.kpIndex = kps.findIndex(kp => !kp.visible);
+				if (state.kpIndex < 0) state.kpIndex = 0;
+			}
+			updateKpHint();
+			renderFront(); renderBack();
+			if (!document.getElementById('label-panel').classList.contains('hidden')) updateKpPanelInfo();
+		}
+
+		// ========== Student ID ==========
+		function renumberStudents() {
+			state.bboxes.forEach((bb,i) => { bb.student_id = `S${String(i+1).padStart(2,'0')}`; });
+			state.nextStudentNum = state.bboxes.length + 1;
+		}
+		function recalcNextStudentNum() {
+			let max = 0;
+			state.bboxes.forEach(bb => { const m = bb.student_id.match(/^S(\d+)$/); if(m) max = Math.max(max, parseInt(m[1])); });
+			state.nextStudentNum = max + 1;
+		}
+
+		// ========== Reset View ==========
+		function resetFrontView() {
+			fitImageToCanvas(state.frontImgW, state.frontImgH, frontContainer.clientWidth, frontContainer.clientHeight, state.frontView);
+			renderFront();
+		}
+		function resetBackView() {
+			fitImageToCanvas(state.backImgW, state.backImgH, backContainer.clientWidth, backContainer.clientHeight, state.backView);
+			renderBack();
+		}
+
+		// ========== Context Menu ==========
+		function showCtxMenu(x, y, hasTarget) {
+			const menu = document.getElementById('ctx-menu');
+			menu.classList.remove('hidden');
+			menu.style.left = x + 'px'; menu.style.top = y + 'px';
+			if (x + 140 > window.innerWidth) menu.style.left = (x-140)+'px';
+			if (y + 180 > window.innerHeight) menu.style.top = (y-180)+'px';
+			menu.querySelectorAll('.ctx-has-target').forEach(el => el.style.display = hasTarget ? '' : 'none');
+			menu.querySelectorAll('.ctx-sep-target').forEach(el => el.style.display = hasTarget ? '' : 'none');
+			if (hasTarget) {
+				const up = document.getElementById('ctx-move-up');
+				const dn = document.getElementById('ctx-move-down');
+				const first = state.ctxTargetIdx === 0;
+				const last = state.ctxTargetIdx === state.bboxes.length - 1;
+				up.style.opacity = first ? '0.3' : ''; up.style.pointerEvents = first ? 'none' : '';
+				dn.style.opacity = last ? '0.3' : ''; dn.style.pointerEvents = last ? 'none' : '';
+			}
+		}
+		function hideCtxMenu() { document.getElementById('ctx-menu').classList.add('hidden'); }
+		function ctxEditLabel() { hideCtxMenu(); if(state.ctxTargetIdx>=0){state.selectedBboxIdx=state.ctxTargetIdx;openLabelPanel(state.ctxTargetIdx);renderFront();updateStudentList();} }
+		function ctxDelete() { hideCtxMenu(); if(state.ctxTargetIdx>=0){pushUndo();state.bboxes.splice(state.ctxTargetIdx,1);recalcNextStudentNum();state.selectedBboxIdx=-1;closeLabelPanel();renderFront();renderBack();updateStudentList();} }
+		function ctxMoveUp() { hideCtxMenu(); if(state.ctxTargetIdx>0){pushUndo();const i=state.ctxTargetIdx;[state.bboxes[i-1],state.bboxes[i]]=[state.bboxes[i],state.bboxes[i-1]];state.selectedBboxIdx=i-1;renderFront();renderBack();updateStudentList();} }
+		function ctxMoveDown() { hideCtxMenu(); if(state.ctxTargetIdx>=0&&state.ctxTargetIdx<state.bboxes.length-1){pushUndo();const i=state.ctxTargetIdx;[state.bboxes[i],state.bboxes[i+1]]=[state.bboxes[i+1],state.bboxes[i]];state.selectedBboxIdx=i+1;renderFront();renderBack();updateStudentList();} }
+		document.addEventListener('click', e => { const m=document.getElementById('ctx-menu'); if(!m.classList.contains('hidden')&&!m.contains(e.target)) hideCtxMenu(); });
+
+		// ========== Keypoint Mode ==========
+		function enterKpMode(view) {
+			view = view || 'front';
+			if (state.selectedBboxIdx < 0) return;
+			const bb = state.bboxes[state.selectedBboxIdx];
+			if (!bb) return;
+			if (view === 'back' && !bb.back_bbox) {
+				showTimedToast('请先在后视角画一个框，再标注点位', 'info');
+				return;
+			}
+			const kps = view === 'back' ? (bb.pose_keypoints_back || (bb.pose_keypoints_back = KP_NAMES.map(n => ({name:n, x:0, y:0, visible:false})))) : (bb.pose_keypoints || (bb.pose_keypoints = KP_NAMES.map(n => ({name:n, x:0, y:0, visible:false}))));
+			state.kpMode = true;
+			state.kpView = view;
+			state.kpIndex = kps.findIndex(kp => !kp.visible);
+			if (state.kpIndex < 0) state.kpIndex = 0;
+			state.kpBboxIdx = state.selectedBboxIdx;
+			const container = view === 'back' ? backContainer : frontContainer;
+			container.style.cursor = 'crosshair';
+			closeLabelPanel();
+			updateKpHint();
+			renderFront(); renderBack();
+		}
+
+		function exitKpMode() {
+			state.kpMode = false;
+			state.kpIndex = 0;
+			state.kpBboxIdx = -1;
+			document.getElementById('kp-hint').classList.add('hidden');
+			frontContainer.style.cursor = 'crosshair';
+			backContainer.style.cursor = 'default';
+			renderFront(); renderBack();
+		}
+
+		function updateKpHint() {
+			const hint = document.getElementById('kp-hint');
+			if (!state.kpMode) { hint.classList.add('hidden'); return; }
+			hint.classList.remove('hidden');
+			const viewLabel = state.kpView === 'back' ? '后视角' : '前视角';
+			hint.textContent = `[${viewLabel}] 点位标注: ${KP_LABELS[state.kpIndex]} (${state.kpIndex+1}/8) — 左键放置 | 右键跳过 | Esc退出`;
+		}
+
+		function placeKp(imgPt) {
+			if (!state.kpMode) return;
+			const bb = state.bboxes[state.kpBboxIdx];
+			if (!bb) { exitKpMode(); return; }
+			const kps = state.kpView === 'back' ? bb.pose_keypoints_back : bb.pose_keypoints;
+			if (!kps) { exitKpMode(); return; }
+			pushUndo();
+			kps[state.kpIndex] = {name: KP_NAMES[state.kpIndex], x: Math.round(imgPt.x), y: Math.round(imgPt.y), visible: true};
+			state.kpIndex++;
+			if (state.kpIndex >= KP_NAMES.length) {
+				exitKpMode();
+			} else {
+				while (state.kpIndex < KP_NAMES.length && kps[state.kpIndex].visible) state.kpIndex++;
+				if (state.kpIndex >= KP_NAMES.length) exitKpMode();
+				else updateKpHint();
+			}
+			renderFront(); renderBack();
+			if (!document.getElementById('label-panel').classList.contains('hidden')) updateKpPanelInfo();
+		}
+
+		function skipKp() {
+			if (!state.kpMode) return;
+			const bb = state.bboxes[state.kpBboxIdx];
+			if (!bb) { exitKpMode(); return; }
+			const kps = state.kpView === 'back' ? bb.pose_keypoints_back : bb.pose_keypoints;
+			if (!kps) { exitKpMode(); return; }
+			pushUndo();
+			kps[state.kpIndex] = {name: KP_NAMES[state.kpIndex], x: 0, y: 0, visible: false};
+			state.kpIndex++;
+			if (state.kpIndex >= KP_NAMES.length) exitKpMode();
+			else { while(state.kpIndex<KP_NAMES.length && kps[state.kpIndex].visible) state.kpIndex++; if(state.kpIndex>=KP_NAMES.length) exitKpMode(); else updateKpHint(); }
+			renderFront(); renderBack();
+			if (!document.getElementById('label-panel').classList.contains('hidden')) updateKpPanelInfo();
+		}
+
+		function clearKeypoints() {
+			if (state.selectedBboxIdx < 0) return;
+			const bb = state.bboxes[state.selectedBboxIdx];
+			if (!bb) return;
+			pushUndo();
+			bb.pose_keypoints = null;
+			bb.pose_keypoints_back = null;
+			exitKpMode();
+			renderFront(); renderBack();
+			updateKpPanelInfo();
+		}
+
+		function undoLastKp() {
+			if (!state.undoStack.length) return;
+			state.redoStack.push(JSON.parse(JSON.stringify(state.bboxes)));
+			const prevBboxes = state.undoStack.pop();
+			const bb = state.bboxes[state.kpBboxIdx];
+			const prevBb = prevBboxes[state.kpBboxIdx];
+			if (!bb || !prevBb) return;
+			if (state.kpView === 'back') {
+				bb.pose_keypoints_back = JSON.parse(JSON.stringify(prevBb.pose_keypoints_back || null));
+			} else {
+				bb.pose_keypoints = JSON.parse(JSON.stringify(prevBb.pose_keypoints || null));
+			}
+			const kps = state.kpView === 'back' ? bb.pose_keypoints_back : bb.pose_keypoints;
+			if (kps && Array.isArray(kps)) {
+				state.kpIndex = kps.findIndex(kp => !kp.visible);
+				if (state.kpIndex < 0) state.kpIndex = 0;
+			}
+			updateKpHint();
+			renderFront(); renderBack();
+			if (!document.getElementById('label-panel').classList.contains('hidden')) updateKpPanelInfo();
+		}
+
+		function getKpCount(bb) {
+			const front = (bb.pose_keypoints && Array.isArray(bb.pose_keypoints)) ? bb.pose_keypoints.filter(kp=>kp.visible).length : 0;
+			const back = (bb.pose_keypoints_back && Array.isArray(bb.pose_keypoints_back)) ? bb.pose_keypoints_back.filter(kp=>kp.visible).length : 0;
+			return {front, back, total: 8};
+		}
+
+		function updateKpPanelInfo() {
+			if (state.selectedBboxIdx < 0) return;
+			const bb = state.bboxes[state.selectedBboxIdx];
+			if (!bb) return;
+			const list = document.getElementById('kp-list');
+			list.innerHTML = '';
+			const fkps = bb.pose_keypoints || [];
+			const bkps = bb.pose_keypoints_back || [];
+			for (let i = 0; i < 8; i++) {
+				const fk = fkps[i], bk = bkps[i];
+				const fVis = fk && fk.visible, bVis = bk && bk.visible;
+
+				const item = document.createElement('div');
+				item.className = 'kp-item';
+
+				const idx = document.createElement('span');
+				idx.className = 'kp-idx';
+				idx.textContent = (i + 1);
+
+				const name = document.createElement('span');
+				name.className = 'kp-name';
+				name.textContent = KP_LABELS[i];
+
+				const fTag = document.createElement('span');
+				fTag.className = 'kp-val' + (fVis ? ' done' : '');
+				fTag.textContent = fVis ? '前' : '前—';
+				fTag.title = '前视角';
+				fTag.style.cursor = 'pointer';
+				fTag.onclick = () => enterKpModeAt(i, 'front');
+
+				const bTag = document.createElement('span');
+				bTag.className = 'kp-val' + (bVis ? ' done' : '');
+				bTag.textContent = bVis ? '后' : '后—';
+				bTag.title = '后视角';
+				bTag.style.cursor = 'pointer';
+				bTag.onclick = () => enterKpModeAt(i, 'back');
+
+				item.appendChild(idx);
+				item.appendChild(name);
+				item.appendChild(fTag);
+				item.appendChild(bTag);
+
+				if (fVis) {
+					const delBtn = document.createElement('span');
+					delBtn.className = 'kp-act';
+					delBtn.textContent = '✕';
+					delBtn.title = '删除前视角此点';
+					delBtn.onclick = () => deleteKpAt(i, 'front');
+					item.appendChild(delBtn);
+				}
+				if (bVis) {
+					const delBtn = document.createElement('span');
+					delBtn.className = 'kp-act';
+					delBtn.textContent = '✕';
+					delBtn.title = '删除后视角此点';
+					delBtn.onclick = () => deleteKpAt(i, 'back');
+					item.appendChild(delBtn);
+				}
+
+				list.appendChild(item);
+			}
+		}
+
+		function enterKpModeAt(idx, view) {
+			view = view || 'front';
+			if (state.selectedBboxIdx < 0) return;
+			const bb = state.bboxes[state.selectedBboxIdx];
+			if (!bb) return;
+			const kps = view === 'back' ? (bb.pose_keypoints_back || (bb.pose_keypoints_back = KP_NAMES.map(n => ({name:n, x:0, y:0, visible:false})))) : (bb.pose_keypoints || (bb.pose_keypoints = KP_NAMES.map(n => ({name:n, x:0, y:0, visible:false}))));
+			state.kpMode = true;
+			state.kpView = view;
+			state.kpIndex = idx;
+			state.kpBboxIdx = state.selectedBboxIdx;
+			const container = view === 'back' ? backContainer : frontContainer;
+			container.style.cursor = 'crosshair';
+			closeLabelPanel();
+			updateKpHint();
+			renderFront(); renderBack();
+		}
+
+		function deleteKpAt(idx, view) {
+			view = view || 'front';
+			if (state.selectedBboxIdx < 0) return;
+			const bb = state.bboxes[state.selectedBboxIdx];
+			if (!bb) return;
+			const kps = view === 'back' ? bb.pose_keypoints_back : bb.pose_keypoints;
+			if (!kps || !kps[idx]) return;
+			pushUndo();
+			kps[idx].visible = false;
+			kps[idx].x = 0;
+			kps[idx].y = 0;
+			renderFront(); renderBack();
+			updateKpPanelInfo();
+		}
+
+		function showTimedToast(msg, type) {
+			type = type || 'error';
+			const container = document.getElementById('toast-container');
+			const t = document.createElement('div');
+			t.className = 'toast ' + type;
+			t.textContent = msg;
+			container.appendChild(t);
+			setTimeout(() => { if (t.parentNode) t.parentNode.removeChild(t); }, 3200);
+		}
+
+		// ========== Folder Selection ==========
+		async function selectFolder() {
+			try {
+				const res = await fetch('/annotate/api/select_folder', {method:'POST'});
+				const data = await res.json();
+				if (data.error) {
+					if(data.error==='canceled') return;
+					if(data.error.includes('forward') || data.error.includes('backward')) {
+						showFolderError(data.error);
+					} else {
+						showTimedToast(data.error,'error');
+					}
+					return;
+				}
+				state.folderPath = data.path; state.totalFrames = data.total_frames; state.currentIndex = 0;
+				document.getElementById('welcome-screen').classList.add('hidden');
+				document.getElementById('main-screen').classList.remove('hidden');
+				document.getElementById('folder-path').textContent = data.path;
+				if (data.warning) showTimedToast(data.warning,'info');
+				initCanvases(); buildFrameList();
+				await loadBatchStatus(); await loadAnnotation(0); await loadFrame(0);
+			} catch(e) { console.error(e); }
+		}
+
+		function showFolderError(msg) {
+			document.getElementById('folder-error-msg').textContent = msg;
+			document.getElementById('folder-error-modal').classList.remove('hidden');
+		}
+		function closeFolderError() {
+			document.getElementById('folder-error-modal').classList.add('hidden');
+		}
+
+		// ========== Canvas Setup ==========
+		function initCanvases() {
+			frontCanvas = document.getElementById('front-canvas');
+			backCanvas = document.getElementById('back-canvas');
+			frontCtx = frontCanvas.getContext('2d');
+			backCtx = backCanvas.getContext('2d');
+			frontContainer = document.getElementById('front-container');
+			backContainer = document.getElementById('back-container');
+			const ro = new ResizeObserver(() => {
+				resizeCanvas(frontContainer, frontCanvas, state.frontView);
+				resizeCanvas(backContainer, backCanvas, state.backView);
+				renderFront(); renderBack();
+			});
+			ro.observe(frontContainer); ro.observe(backContainer);
+			setupFrontInteraction();
+			setupPanZoom(frontContainer, state.frontView, renderFront);
+			setupPanZoom(backContainer, state.backView, renderBack);
+			setupBackInteraction();
+		}
+
+		function resizeCanvas(c, cv, v) {
+			const w=c.clientWidth, h=c.clientHeight, dpr=window.devicePixelRatio||1;
+			cv.width=w*dpr; cv.height=h*dpr; cv.style.width=w+'px'; cv.style.height=h+'px';
+		}
+
+		function setupPanZoom(container, view, renderFn) {
+			container.addEventListener('wheel', e => {
+				e.preventDefault();
+				const r=container.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+				const d=e.deltaY>0?0.9:1.1, ns=Math.max(1,Math.min(view.scale*d,20));
+				const ix=(mx-view.tx)/view.scale, iy=(my-view.ty)/view.scale;
+				view.scale=ns; view.tx=mx-ix*ns; view.ty=my-iy*ns;
+				if(view.scale<=1.01){view.tx=0;view.ty=0;view.scale=1;}
+				renderFn();
+			},{passive:false});
+			let panning=false,psx=0,psy=0;
+			container.addEventListener('mousedown',e=>{
+				if(e.button===1||(e.button===0&&e.altKey)){panning=true;psx=e.clientX-view.tx;psy=e.clientY-view.ty;container.style.cursor='grab';e.preventDefault();}
+			});
+			window.addEventListener('mousemove',e=>{if(!panning)return;view.tx=e.clientX-psx;view.ty=e.clientY-psy;renderFn();});
+			window.addEventListener('mouseup',()=>{if(panning){panning=false;container.style.cursor='crosshair';}});
+		}
+
+		function fitImageToCanvas(iw,ih,cw,ch,v) {
+			const fs=Math.min(cw/iw,ch/ih); v.fitScale=fs; v.scale=1; v.tx=(cw-iw*fs)/2; v.ty=(ch-ih*fs)/2;
+		}
+		function imgToCanvas(x,y,v) { return {x:x*v.fitScale*v.scale+v.tx, y:y*v.fitScale*v.scale+v.ty}; }
+		function canvasToImg(x,y,v) { return {x:(x-v.tx)/(v.fitScale*v.scale), y:(y-v.ty)/(v.fitScale*v.scale)}; }
+
+		// ========== Frame Loading ==========
+		async function loadFrame(index) {
+			state.currentIndex=index; state.bboxes=JSON.parse(JSON.stringify(state.annotations[index]||[]));
+			state.selectedBboxIdx=-1; state.undoStack=[]; state.redoStack=[];
+			exitKpMode(); closeLabelPanel();
+			const fi=new Image(), bi=new Image();
+			fi.crossOrigin='anonymous'; bi.crossOrigin='anonymous';
+			fi.src=`/annotate/api/frame_image/${index}/front`; bi.src=`/annotate/api/frame_image/${index}/back`;
+			await Promise.all([new Promise((r,j)=>{fi.onload=r;fi.onerror=j;}), new Promise((r,j)=>{bi.onload=r;bi.onerror=j;})]);
+			state.frontImg=fi; state.backImg=bi;
+			state.frontImgW=fi.naturalWidth; state.frontImgH=fi.naturalHeight;
+			state.backImgW=bi.naturalWidth; state.backImgH=bi.naturalHeight;
+			fitImageToCanvas(state.frontImgW,state.frontImgH,frontContainer.clientWidth,frontContainer.clientHeight,state.frontView);
+			fitImageToCanvas(state.backImgW,state.backImgH,backContainer.clientWidth,backContainer.clientHeight,state.backView);
+			recalcNextStudentNum(); renderFront(); renderBack();
+			updateFrameListHighlight(); updateStudentList(); updateHeaderInfo();
+		}
+
+		// ========== Rendering ==========
+		function renderFront() {
+			const dpr=window.devicePixelRatio||1, w=frontCanvas.width, h=frontCanvas.height;
+			frontCtx.setTransform(dpr,0,0,dpr,0,0); frontCtx.clearRect(0,0,w,h);
+			if(!state.frontImg) return;
+			const v=state.frontView;
+			frontCtx.save(); frontCtx.translate(v.tx,v.ty); frontCtx.scale(v.fitScale*v.scale,v.fitScale*v.scale);
+			frontCtx.drawImage(state.frontImg,0,0);
+
+			state.bboxes.forEach((bb,idx)=>{
+				const sel=idx===state.selectedBboxIdx;
+				frontCtx.strokeStyle=sel?'#e6c84c':'#5a8c6f';
+				frontCtx.lineWidth=2/(v.fitScale*v.scale);
+				frontCtx.fillStyle=sel?'rgba(230,200,76,0.12)':'rgba(90,140,111,0.08)';
+				frontCtx.fillRect(bb.x1,bb.y1,bb.x2-bb.x1,bb.y2-bb.y1);
+				frontCtx.strokeRect(bb.x1,bb.y1,bb.x2-bb.x1,bb.y2-bb.y1);
+				if(sel){const hs=4/(v.fitScale*v.scale);frontCtx.fillStyle='#e6c84c';getResizeHandles(bb,0).forEach(h=>{frontCtx.fillRect(h.x-hs,h.y-hs,hs*2,hs*2);});}
+				const fs=Math.max(10,12/(v.fitScale*v.scale));
+				frontCtx.font=`${fs}px Inter, sans-serif`;
+				frontCtx.fillStyle=sel?'#e6c84c':'#5a8c6f';
+				const sm={sitting_listening:'坐听',sitting_reading:'坐读',standing:'站',left_seat:'离'};
+				const pm={normal:'✓',bad:'✗'};
+				const kc=getKpCount(bb);
+				const kpTag=(kc.front+kc.back)>0?` [${kc.front}+${kc.back}]`:'';
+				frontCtx.fillText(`${bb.student_id} ${sm[bb.status]||''} ${pm[bb.posture]||''}${kpTag}`,bb.x1,bb.y1-4/(v.fitScale*v.scale));
+
+				if(bb.pose_keypoints&&Array.isArray(bb.pose_keypoints)){
+					const lw=1.5/(v.fitScale*v.scale);
+					const r=3/(v.fitScale*v.scale);
+					KP_BONES.forEach(([a,b])=>{
+						const pa=bb.pose_keypoints[a], pb=bb.pose_keypoints[b];
+						if(pa&&pb&&pa.visible&&pb.visible){
+							frontCtx.strokeStyle='rgba(90,200,140,0.8)'; frontCtx.lineWidth=lw;
+							frontCtx.beginPath(); frontCtx.moveTo(pa.x,pa.y); frontCtx.lineTo(pb.x,pb.y); frontCtx.stroke();
+						}
+					});
+					bb.pose_keypoints.forEach(kp=>{
+						if(!kp||!kp.visible) return;
+						frontCtx.fillStyle='#5ae68c'; frontCtx.beginPath(); frontCtx.arc(kp.x,kp.y,r,0,Math.PI*2); frontCtx.fill();
+					});
+				}
+			});
+
+			if(state.kpMode && state.kpBboxIdx>=0){
+				const bb=state.bboxes[state.kpBboxIdx];
+				if(bb){
+					frontCtx.strokeStyle='#e6c84c'; frontCtx.lineWidth=2.5/(v.fitScale*v.scale);
+					frontCtx.setLineDash([6/(v.fitScale*v.scale),3/(v.fitScale*v.scale)]);
+					frontCtx.strokeRect(bb.x1,bb.y1,bb.x2-bb.x1,bb.y2-bb.y1);
+					frontCtx.setLineDash([]);
+				}
+			}
+
+			if(state.drawing&&state.drawStart&&state.drawCurrent){
+				const sx=Math.min(state.drawStart.x,state.drawCurrent.x),sy=Math.min(state.drawStart.y,state.drawCurrent.y);
+				const ex=Math.max(state.drawStart.x,state.drawCurrent.x),ey=Math.max(state.drawStart.y,state.drawCurrent.y);
+				frontCtx.strokeStyle='#8aaac6'; frontCtx.lineWidth=1.5/(v.fitScale*v.scale);
+				frontCtx.setLineDash([4/(v.fitScale*v.scale),4/(v.fitScale*v.scale)]);
+				frontCtx.strokeRect(sx,sy,ex-sx,ey-sy); frontCtx.setLineDash([]);
+			}
+			frontCtx.restore();
+		}
+
+		function renderBack() {
+			const dpr=window.devicePixelRatio||1, w=backCanvas.width, h=backCanvas.height;
+			backCtx.setTransform(dpr,0,0,dpr,0,0); backCtx.clearRect(0,0,w,h);
+			if(!state.backImg) return;
+			const v=state.backView;
+			backCtx.save(); backCtx.translate(v.tx,v.ty); backCtx.scale(v.fitScale*v.scale,v.fitScale*v.scale);
+			backCtx.drawImage(state.backImg,0,0);
+
+			state.bboxes.forEach((bb,idx)=>{
+				const sel=idx===state.selectedBboxIdx;
+				const backBb=bb.back_bbox;
+				if(backBb && sel){
+					backCtx.strokeStyle='rgba(230,200,76,0.7)';
+					backCtx.lineWidth=1.5/(v.fitScale*v.scale);
+					backCtx.fillStyle='rgba(230,200,76,0.08)';
+					backCtx.fillRect(backBb.x1,backBb.y1,backBb.x2-backBb.x1,backBb.y2-backBb.y1);
+					backCtx.strokeRect(backBb.x1,backBb.y1,backBb.x2-backBb.x1,backBb.y2-backBb.y1);
+					const hs=4/(v.fitScale*v.scale);
+					backCtx.fillStyle='#e6c84c';
+					const mx=(backBb.x1+backBb.x2)/2, my=(backBb.y1+backBb.y2)/2;
+					[{x:backBb.x1,y:backBb.y1},{x:mx,y:backBb.y1},{x:backBb.x2,y:backBb.y1},
+					 {x:backBb.x2,y:my},{x:backBb.x2,y:backBb.y2},{x:mx,y:backBb.y2},
+					 {x:backBb.x1,y:backBb.y2},{x:backBb.x1,y:my}].forEach(h=>{
+						backCtx.fillRect(h.x-hs,h.y-hs,hs*2,hs*2);
+					});
+					const fs=Math.max(10,10/(v.fitScale*v.scale));
+					backCtx.font=`${fs}px Inter, sans-serif`;
+					backCtx.fillStyle='#e6c84c';
+					backCtx.fillText(bb.student_id,backBb.x1,backBb.y1-3/(v.fitScale*v.scale));
+				}
+				if(sel && backBb && bb.pose_keypoints_back&&Array.isArray(bb.pose_keypoints_back)){
+					const lw=1.5/(v.fitScale*v.scale);
+					const r=3/(v.fitScale*v.scale);
+					KP_BONES.forEach(([a,b])=>{
+						const pa=bb.pose_keypoints_back[a], pb=bb.pose_keypoints_back[b];
+						if(pa&&pb&&pa.visible&&pb.visible){
+							backCtx.strokeStyle='rgba(140,180,220,0.8)'; backCtx.lineWidth=lw;
+							backCtx.beginPath(); backCtx.moveTo(pa.x,pa.y); backCtx.lineTo(pb.x,pb.y); backCtx.stroke();
+						}
+					});
+					bb.pose_keypoints_back.forEach(kp=>{
+						if(!kp||!kp.visible) return;
+						backCtx.fillStyle='#6aafe6'; backCtx.beginPath(); backCtx.arc(kp.x,kp.y,r,0,Math.PI*2); backCtx.fill();
+					});
+				}
+			});
+
+			if(state.kpMode && state.kpView==='back' && state.kpBboxIdx>=0){
+				const bb=state.bboxes[state.kpBboxIdx];
+				if(bb&&bb.back_bbox){
+					const bk=bb.back_bbox;
+					backCtx.strokeStyle='#e6c84c'; backCtx.lineWidth=2.5/(v.fitScale*v.scale);
+					backCtx.setLineDash([6/(v.fitScale*v.scale),3/(v.fitScale*v.scale)]);
+					backCtx.strokeRect(bk.x1,bk.y1,bk.x2-bk.x1,bk.y2-bk.y1);
+					backCtx.setLineDash([]);
+				}
+			}
+
+			if(state.backDrawing&&state.backDrawStart&&state.backDrawCurrent){
+				const sx=Math.min(state.backDrawStart.x,state.backDrawCurrent.x);
+				const sy=Math.min(state.backDrawStart.y,state.backDrawCurrent.y);
+				const ex=Math.max(state.backDrawStart.x,state.backDrawCurrent.x);
+				const ey=Math.max(state.backDrawStart.y,state.backDrawCurrent.y);
+				backCtx.strokeStyle='#8aaac6'; backCtx.lineWidth=1.5/(v.fitScale*v.scale);
+				backCtx.setLineDash([4/(v.fitScale*v.scale),4/(v.fitScale*v.scale)]);
+				backCtx.strokeRect(sx,sy,ex-sx,ey-sy); backCtx.setLineDash([]);
+			}
+
+			backCtx.restore();
+		}
+
+		// ========== Front Canvas Interaction ==========
+		function setupFrontInteraction() {
+			const c=frontContainer;
+			c.addEventListener('mousedown',e=>{
+				if(e.button!==0||e.altKey) return;
+				const r=c.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+				const img=canvasToImg(mx,my,state.frontView);
+				const hs=8/(state.frontView.fitScale*state.frontView.scale);
+
+				if(state.kpMode){
+					const bb=state.bboxes[state.kpBboxIdx];
+					if(bb && img.x>=bb.x1&&img.x<=bb.x2&&img.y>=bb.y1&&img.y<=bb.y2){
+						placeKp(img);
+					} else {
+						exitKpMode();
+					}
+					return;
+				}
+
+				for(let i=state.bboxes.length-1;i>=0;i--){
+					const bb=state.bboxes[i];
+					for(const h of getResizeHandles(bb,hs)){
+						if(Math.abs(img.x-h.x)<hs&&Math.abs(img.y-h.y)<hs){
+							pushUndo(); state.resizing=true; state.resizeBboxIdx=i; state.resizeHandle=h.dir; state.drawStart=img;
+							state.selectedBboxIdx=i; renderFront(); renderBack(); updateStudentList(); return;
+						}
+					}
+				}
+				for(let i=state.bboxes.length-1;i>=0;i--){
+					const bb=state.bboxes[i];
+					if(img.x>=bb.x1&&img.x<=bb.x2&&img.y>=bb.y1&&img.y<=bb.y2){
+						pushUndo(); state.dragging=true; state.dragBboxIdx=i; state.dragOffset={x:img.x-bb.x1,y:img.y-bb.y1};
+						state.selectedBboxIdx=i; c.style.cursor='move'; renderFront(); renderBack(); updateStudentList(); return;
+					}
+				}
+				state.drawing=true; state.drawStart=img; state.drawCurrent=img;
+				if(state.selectedBboxIdx>=0){state.selectedBboxIdx=-1;closeLabelPanel();renderFront();renderBack();updateStudentList();}
+			});
+
+			c.addEventListener('mousemove',e=>{
+				const r=c.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+				const img=canvasToImg(mx,my,state.frontView);
+				if(state.kpMode){ c.style.cursor='crosshair'; return; }
+				if(state.drawing){state.drawCurrent=img;renderFront();return;}
+				if(state.dragging&&state.dragBboxIdx>=0){
+					const bb=state.bboxes[state.dragBboxIdx], w=bb.x2-bb.x1, h=bb.y2-bb.y1;
+					bb.x1=img.x-state.dragOffset.x; bb.y1=img.y-state.dragOffset.y; bb.x2=bb.x1+w; bb.y2=bb.y1+h;
+					renderFront(); return;
+				}
+				if(state.resizing&&state.resizeBboxIdx>=0){
+					const bb=state.bboxes[state.resizeBboxIdx], d=state.resizeHandle;
+					if(d.includes('e'))bb.x2=img.x; if(d.includes('w'))bb.x1=img.x;
+					if(d.includes('s'))bb.y2=img.y; if(d.includes('n'))bb.y1=img.y;
+					normalizeBbox(bb); renderFront(); return;
+				}
+				const hs=8/(state.frontView.fitScale*state.frontView.scale);
+				let cur='crosshair';
+				for(let i=state.bboxes.length-1;i>=0;i--){
+					const bb=state.bboxes[i];
+					for(const h of getResizeHandles(bb,hs)){if(Math.abs(img.x-h.x)<hs&&Math.abs(img.y-h.y)<hs){cur=h.cursor;c.style.cursor=cur;return;}}
+					if(img.x>=bb.x1&&img.x<=bb.x2&&img.y>=bb.y1&&img.y<=bb.y2){cur='pointer';break;}
+				}
+				c.style.cursor=cur;
+			});
+
+			c.addEventListener('mouseup',e=>{
+				if(e.button!==0) return;
+				if(state.resizing){state.resizing=false;state.resizeBboxIdx=-1;c.style.cursor='crosshair';return;}
+				if(state.dragging){state.dragging=false;state.dragBboxIdx=-1;c.style.cursor='crosshair';return;}
+				if(state.drawing&&state.drawStart&&state.drawCurrent){
+					state.drawing=false;
+					const sx=Math.min(state.drawStart.x,state.drawCurrent.x),sy=Math.min(state.drawStart.y,state.drawCurrent.y);
+					const ex=Math.max(state.drawStart.x,state.drawCurrent.x),ey=Math.max(state.drawStart.y,state.drawCurrent.y);
+					if(ex-sx>5&&ey-sy>5){
+						pushUndo();
+						const bb={student_id:`S${String(state.nextStudentNum).padStart(2,'0')}`,x1:Math.round(sx),y1:Math.round(sy),x2:Math.round(ex),y2:Math.round(ey),back_bbox:null,status:'sitting_listening',posture:'normal',bad_reason:[],pose_keypoints:null,pose_keypoints_back:null,note:''};
+						state.bboxes.push(bb); state.selectedBboxIdx=state.bboxes.length-1; state.nextStudentNum++;
+						updateStudentList(); openLabelPanel(state.selectedBboxIdx);
+					}
+					state.drawStart=null; state.drawCurrent=null; renderFront();
+				}
+			});
+
+			c.addEventListener('dblclick',e=>{
+				const r=c.getBoundingClientRect(), img=canvasToImg(e.clientX-r.left,e.clientY-r.top,state.frontView);
+				for(let i=state.bboxes.length-1;i>=0;i--){
+					const bb=state.bboxes[i];
+					if(img.x>=bb.x1&&img.x<=bb.x2&&img.y>=bb.y1&&img.y<=bb.y2){
+						state.selectedBboxIdx=i; openLabelPanel(i); renderFront(); renderBack(); updateStudentList(); return;
+					}
+				}
+			});
+
+			c.addEventListener('contextmenu',e=>{
+				e.preventDefault();
+				if(state.kpMode){ skipKp(); return; }
+				const r=c.getBoundingClientRect(), img=canvasToImg(e.clientX-r.left,e.clientY-r.top,state.frontView);
+				for(let i=state.bboxes.length-1;i>=0;i--){
+					const bb=state.bboxes[i];
+					if(img.x>=bb.x1&&img.x<=bb.x2&&img.y>=bb.y1&&img.y<=bb.y2){
+						state.ctxTargetIdx=i; state.selectedBboxIdx=i; renderFront(); renderBack(); updateStudentList();
+						showCtxMenu(e.clientX,e.clientY,true); return;
+					}
+				}
+				state.ctxTargetIdx=-1; state.selectedBboxIdx=-1; closeLabelPanel();
+				renderFront(); updateStudentList(); showCtxMenu(e.clientX,e.clientY,false);
+			});
+		}
+
+		// ========== Back Canvas Interaction ==========
+		function setupBackInteraction() {
+			const c = backContainer;
+			let backDragging = false, backDragOffset = {x:0,y:0};
+			let backResizing = false, backResizeDir = '';
+
+			c.addEventListener('mousedown', e => {
+				if (e.button !== 0 || e.altKey) return;
+				const r = c.getBoundingClientRect();
+				const img = canvasToImg(e.clientX - r.left, e.clientY - r.top, state.backView);
+
+				if (state.kpMode && state.kpView === 'back') {
+					const bb = state.bboxes[state.kpBboxIdx];
+					const backBb = bb ? bb.back_bbox : null;
+					if (backBb && img.x >= backBb.x1 && img.x <= backBb.x2 && img.y >= backBb.y1 && img.y <= backBb.y2) {
+						placeKp(img);
+					} else {
+						exitKpMode();
+					}
+					return;
+				}
+
+				if (state.selectedBboxIdx < 0) return;
+				const bb = state.bboxes[state.selectedBboxIdx];
+				if (!bb || !bb.back_bbox) {
+					state.backDrawing = true;
+					state.backDrawStart = img;
+					state.backDrawCurrent = img;
+					return;
+				}
+
+				const bk = bb.back_bbox;
+				const hs = 8 / (state.backView.fitScale * state.backView.scale);
+				const handles = [
+					{x:bk.x1,y:bk.y1,dir:'nw'},{x:(bk.x1+bk.x2)/2,y:bk.y1,dir:'n'},{x:bk.x2,y:bk.y1,dir:'ne'},
+					{x:bk.x2,y:(bk.y1+bk.y2)/2,dir:'e'},{x:bk.x2,y:bk.y2,dir:'se'},{x:(bk.x1+bk.x2)/2,y:bk.y2,dir:'s'},
+					{x:bk.x1,y:bk.y2,dir:'sw'},{x:bk.x1,y:(bk.y1+bk.y2)/2,dir:'w'}
+				];
+				for (const h of handles) {
+					if (Math.abs(img.x-h.x)<hs && Math.abs(img.y-h.y)<hs) {
+						pushUndo(); backResizing=true; backResizeDir=h.dir; return;
+					}
+				}
+				if (img.x>=bk.x1&&img.x<=bk.x2&&img.y>=bk.y1&&img.y<=bk.y2) {
+					pushUndo(); backDragging=true;
+					backDragOffset={x:img.x-bk.x1,y:img.y-bk.y1};
+					c.style.cursor='move';
+					return;
+				}
+
+				state.backDrawing = true;
+				state.backDrawStart = img;
+				state.backDrawCurrent = img;
+			});
+
+			c.addEventListener('mousemove', e => {
+				if (state.kpMode && state.kpView === 'back') {
+					c.style.cursor = 'crosshair';
+					return;
+				}
+				const r = c.getBoundingClientRect();
+				const img = canvasToImg(e.clientX - r.left, e.clientY - r.top, state.backView);
+
+				if (state.backDrawing) {
+					state.backDrawCurrent = img;
+					renderBack();
+					return;
+				}
+
+				if (backDragging && state.selectedBboxIdx>=0) {
+					const bb = state.bboxes[state.selectedBboxIdx];
+					if (bb && bb.back_bbox) {
+						const bk=bb.back_bbox, w=bk.x2-bk.x1, h=bk.y2-bk.y1;
+						bk.x1=img.x-backDragOffset.x; bk.y1=img.y-backDragOffset.y;
+						bk.x2=bk.x1+w; bk.y2=bk.y1+h;
+						renderBack();
+					}
+					return;
+				}
+
+				if (backResizing && state.selectedBboxIdx>=0) {
+					const bb = state.bboxes[state.selectedBboxIdx];
+					if (bb && bb.back_bbox) {
+						const bk=bb.back_bbox;
+						if(backResizeDir.includes('e'))bk.x2=img.x; if(backResizeDir.includes('w'))bk.x1=img.x;
+						if(backResizeDir.includes('s'))bk.y2=img.y; if(backResizeDir.includes('n'))bk.y1=img.y;
+						if(bk.x1>bk.x2){const t=bk.x1;bk.x1=bk.x2;bk.x2=t;}
+						if(bk.y1>bk.y2){const t=bk.y1;bk.y1=bk.y2;bk.y2=t;}
+						renderBack();
+					}
+					return;
+				}
+
+				if (state.selectedBboxIdx>=0) {
+					const bb = state.bboxes[state.selectedBboxIdx];
+					if (bb && bb.back_bbox) {
+						const bk=bb.back_bbox;
+						const hs=8/(state.backView.fitScale*state.backView.scale);
+						const handles=[
+							{x:bk.x1,y:bk.y1,dir:'nw'},{x:(bk.x1+bk.x2)/2,y:bk.y1,dir:'n'},{x:bk.x2,y:bk.y1,dir:'ne'},
+							{x:bk.x2,y:(bk.y1+bk.y2)/2,dir:'e'},{x:bk.x2,y:bk.y2,dir:'se'},{x:(bk.x1+bk.x2)/2,y:bk.y2,dir:'s'},
+							{x:bk.x1,y:bk.y2,dir:'sw'},{x:bk.x1,y:(bk.y1+bk.y2)/2,dir:'w'}
+						];
+						const cursors={nw:'nw-resize',n:'n-resize',ne:'ne-resize',e:'e-resize',se:'se-resize',s:'s-resize',sw:'sw-resize',w:'w-resize'};
+						for(const h of handles){if(Math.abs(img.x-h.x)<hs&&Math.abs(img.y-h.y)<hs){c.style.cursor=cursors[h.dir];return;}}
+						if(img.x>=bk.x1&&img.x<=bk.x2&&img.y>=bk.y1&&img.y<=bk.y2){c.style.cursor='pointer';return;}
+					}
+				}
+				c.style.cursor='default';
+			});
+
+			c.addEventListener('mouseup', e => {
+				if (backDragging) { backDragging=false; c.style.cursor='default'; return; }
+				if (backResizing) { backResizing=false; backResizeDir=''; return; }
+				if (e.button!==0 || !state.backDrawing) return;
+				state.backDrawing = false;
+				const sx=Math.min(state.backDrawStart.x,state.backDrawCurrent.x);
+				const sy=Math.min(state.backDrawStart.y,state.backDrawCurrent.y);
+				const ex=Math.max(state.backDrawStart.x,state.backDrawCurrent.x);
+				const ey=Math.max(state.backDrawStart.y,state.backDrawCurrent.y);
+				if (ex-sx>5 && ey-sy>5 && state.selectedBboxIdx>=0) {
+					pushUndo();
+					state.bboxes[state.selectedBboxIdx].back_bbox={x1:Math.round(sx),y1:Math.round(sy),x2:Math.round(ex),y2:Math.round(ey)};
+					renderBack();
+				}
+				state.backDrawStart=null; state.backDrawCurrent=null;
+			});
+
+			c.addEventListener('contextmenu', e => {
+				e.preventDefault();
+				if (state.kpMode && state.kpView==='back') { skipKp(); return; }
+				if (state.selectedBboxIdx>=0) {
+					const bb=state.bboxes[state.selectedBboxIdx];
+					if (bb && bb.back_bbox) { pushUndo(); bb.back_bbox=null; bb.pose_keypoints_back=null; renderBack(); updateKpPanelInfo(); }
+				}
+			});
+		}
+
+		function getResizeHandles(bb,s) {
+			const mx=(bb.x1+bb.x2)/2,my=(bb.y1+bb.y2)/2;
+			return [{x:bb.x1,y:bb.y1,dir:'nw',cursor:'nw-resize'},{x:mx,y:bb.y1,dir:'n',cursor:'n-resize'},{x:bb.x2,y:bb.y1,dir:'ne',cursor:'ne-resize'},{x:bb.x2,y:my,dir:'e',cursor:'e-resize'},{x:bb.x2,y:bb.y2,dir:'se',cursor:'se-resize'},{x:mx,y:bb.y2,dir:'s',cursor:'s-resize'},{x:bb.x1,y:bb.y2,dir:'sw',cursor:'sw-resize'},{x:bb.x1,y:my,dir:'w',cursor:'w-resize'}];
+		}
+		function normalizeBbox(bb){if(bb.x1>bb.x2){const t=bb.x1;bb.x1=bb.x2;bb.x2=t;}if(bb.y1>bb.y2){const t=bb.y1;bb.y1=bb.y2;bb.y2=t;}}
+
+		// ========== Label Panel ==========
+		function openLabelPanel(idx) {
+			const bb=state.bboxes[idx]; if(!bb) return;
+			const panel=document.getElementById('label-panel');
+			panel.classList.remove('hidden');
+			document.getElementById('panel-title').textContent=`学生 ${bb.student_id}`;
+			const sel=document.getElementById('lp-student-id'); sel.innerHTML='';
+			const ids=new Set(); state.bboxes.forEach(b=>ids.add(b.student_id));
+			const sorted=Array.from(ids).sort((a,b)=>parseInt(a.slice(1))-parseInt(b.slice(1)));
+			sorted.forEach(id=>{const o=document.createElement('option');o.value=id;o.textContent=id;if(id===bb.student_id)o.selected=true;sel.appendChild(o);});
+			const co=document.createElement('option');co.value='__custom__';co.textContent='✏️ 键入编号...';sel.appendChild(co);
+			const no=document.createElement('option');no.value='__new__';no.textContent='+ 新编号';sel.appendChild(no);
+			setRadioValue('lp-status',bb.status||'sitting_listening');
+			setRadioValue('lp-posture',bb.posture||'normal');
+			setCheckValues('lp-bad-reason',bb.bad_reason||[]);
+			document.getElementById('lp-note').value=bb.note||'';
+			updateBadReasonVisibility(); updateKpPanelInfo();
+			const r=frontContainer.getBoundingClientRect(), p=imgToCanvas(bb.x2+10,bb.y1,state.frontView);
+			let l=r.left+p.x, t=r.top+p.y;
+			const pw=panel.offsetWidth||280, ph=panel.offsetHeight||420;
+			if(l+pw>window.innerWidth) l=r.left+p.x-pw;
+			if(l<5) l=5;
+			if(t+ph>window.innerHeight) t=window.innerHeight-ph-5;
+			if(t<5) t=5;
+			panel.style.left=l+'px'; panel.style.top=t+'px';
+		}
+		function closeLabelPanel(){document.getElementById('label-panel').classList.add('hidden');}
+
+		function selectRadio(g,el){
+			document.querySelectorAll(`#${g} .radio-btn`).forEach(b=>b.classList.remove('active'));
+			el.classList.add('active');
+			if(g==='lp-posture')updateBadReasonVisibility();
+			autoSaveLabel();
+		}
+		function getRadioValue(g){const a=document.querySelector(`#${g} .radio-btn.active`);return a?a.dataset.val:null;}
+		function setRadioValue(g,v){document.querySelectorAll(`#${g} .radio-btn`).forEach(b=>{b.classList.toggle('active',b.dataset.val===v);});}
+		function toggleCheck(g,el){el.classList.toggle('active');autoSaveLabel();}
+		function getCheckValues(g){return Array.from(document.querySelectorAll(`#${g} .check-btn.active`)).map(b=>b.dataset.val);}
+		function setCheckValues(g,vs){document.querySelectorAll(`#${g} .check-btn`).forEach(b=>{b.classList.toggle('active',vs.includes(b.dataset.val));});}
+		function updateBadReasonVisibility(){const p=getRadioValue('lp-posture');document.getElementById('bad-reason-section').style.opacity=p==='bad'?'1':'0.3';document.getElementById('bad-reason-section').style.pointerEvents=p==='bad'?'auto':'none';}
+
+		function autoSaveLabel() {
+			if(state.selectedBboxIdx<0) return;
+			const bb=state.bboxes[state.selectedBboxIdx]; if(!bb) return;
+			bb.status=getRadioValue('lp-status')||'sitting_listening';
+			bb.posture=getRadioValue('lp-posture')||'normal';
+			bb.bad_reason=bb.posture==='bad'?getCheckValues('lp-bad-reason'):[];
+			bb.note=document.getElementById('lp-note').value;
+			const sel=document.getElementById('lp-student-id');
+			if(sel.value!=='__new__' && sel.value!=='__custom__' && sel.value!==bb.student_id){
+				const ci=state.bboxes.findIndex((b,i)=>i!==state.selectedBboxIdx&&b.student_id===sel.value);
+				if(ci>=0){
+					// 只交换编号，不交换框的位置
+					state.bboxes[ci].student_id=bb.student_id;
+					bb.student_id=sel.value;
+					document.getElementById('panel-title').textContent=`学生 ${bb.student_id}`;
+					sel.value=bb.student_id;
+				}
+				else{bb.student_id=sel.value;}
+			}
+			renderFront(); renderBack(); updateStudentList();
+		}
+
+		function confirmLabel() {
+			if(state.selectedBboxIdx<0) return;
+			const bb=state.bboxes[state.selectedBboxIdx]; if(!bb) return;
+			bb.status=getRadioValue('lp-status')||'sitting_listening';
+			bb.posture=getRadioValue('lp-posture')||'normal';
+			bb.bad_reason=bb.posture==='bad'?getCheckValues('lp-bad-reason'):[];
+			bb.note=document.getElementById('lp-note').value;
+			const sel=document.getElementById('lp-student-id');
+			if(sel.value==='__new__'){bb.student_id=`S${String(state.nextStudentNum).padStart(2,'0')}`;state.nextStudentNum++;}
+			else if(sel.value==='__custom__'){/* handled in onStudentIdChange */}
+			else{const nv=sel.value;if(nv!==bb.student_id){const ci=state.bboxes.findIndex((b,i)=>i!==state.selectedBboxIdx&&b.student_id===nv);if(ci>=0){state.bboxes[ci].student_id=bb.student_id;bb.student_id=nv;}else{bb.student_id=nv;}}}
+			closeLabelPanel(); renderFront(); renderBack(); updateStudentList();
+		}
+
+		function deleteSelected(){if(state.selectedBboxIdx<0)return;pushUndo();exitKpMode();state.bboxes.splice(state.selectedBboxIdx,1);recalcNextStudentNum();state.selectedBboxIdx=-1;closeLabelPanel();renderFront();renderBack();updateStudentList();}
+		function onStudentIdChange(){const s=document.getElementById('lp-student-id');if(s.value==='__new__'){const n=`S${String(state.nextStudentNum).padStart(2,'0')}`;const o=document.createElement('option');o.value=n;o.textContent=n;s.insertBefore(o,s.lastElementChild);s.value=n;state.nextStudentNum++;}else if(s.value==='__custom__'){const inp=prompt('输入编号数字 (如 3 代表 S03):');if(inp){const num=parseInt(inp.trim());if(!isNaN(num)&&num>=1){const nv=`S${String(num).padStart(2,'0')}`;const bb=state.bboxes[state.selectedBboxIdx];if(bb){const ci=state.bboxes.findIndex((b,i)=>i!==state.selectedBboxIdx&&b.student_id===nv);if(ci>=0){state.bboxes[ci].student_id=bb.student_id;bb.student_id=nv;document.getElementById('panel-title').textContent=`学生 ${bb.student_id}`;s.value=bb.student_id;}else{bb.student_id=nv;const o=document.createElement('option');o.value=nv;o.textContent=nv;s.insertBefore(o,s.lastElementChild);s.value=nv;}renderFront();renderBack();updateStudentList();autoSaveLabel();return;}}}s.value=state.bboxes[state.selectedBboxIdx]?.student_id||'';}autoSaveLabel();}
+
+		// ========== Student List ==========
+		function updateStudentList() {
+			// 按学生编号排序
+			const selected = state.selectedBboxIdx >= 0 ? state.bboxes[state.selectedBboxIdx] : null;
+			state.bboxes.sort((a,b)=>parseInt(a.student_id.slice(1))-parseInt(b.student_id.slice(1)));
+			if(selected) state.selectedBboxIdx = state.bboxes.indexOf(selected);
+
+			const list=document.getElementById('student-list'); list.innerHTML='';
+			document.getElementById('student-count').textContent=state.bboxes.length;
+			const sm={sitting_listening:'坐-听说',sitting_reading:'坐-读写',standing:'站立',left_seat:'离席'};
+			const pm={normal:'正常',bad:'不良'};
+			state.bboxes.forEach((bb,idx)=>{
+				const chip=document.createElement('div');
+				chip.className=`student-chip mb-1 ${idx===state.selectedBboxIdx?'selected':''}`;
+				const info=document.createElement('span'); info.className='truncate';
+				const kc=getKpCount(bb); const kpTag=(kc.front+kc.back)>0?` ⚙${kc.front}+${kc.back}`:'';
+				info.textContent=`${bb.student_id} ${sm[bb.status]||''} ${pm[bb.posture]||''}${kpTag}`;
+				info.style.cursor='pointer';
+				info.onclick=()=>{state.selectedBboxIdx=idx;openLabelPanel(idx);renderFront();renderBack();updateStudentList();};
+				const arrowDiv=document.createElement('div'); arrowDiv.className='flex flex-col gap-0 shrink-0';
+				const isFirst=idx===0, isLast=idx===state.bboxes.length-1;
+				const up=document.createElement('div'); up.className='arrow-btn'+(isFirst?' opacity-20 pointer-events-none':''); up.textContent='▲'; up.title=isFirst?'已是第一个':'上移';
+				up.onclick=e=>{e.stopPropagation();if(idx>0){pushUndo();[state.bboxes[idx-1],state.bboxes[idx]]=[state.bboxes[idx],state.bboxes[idx-1]];recalcNextStudentNum();state.selectedBboxIdx=idx-1;renderFront();renderBack();updateStudentList();}};
+				const dn=document.createElement('div'); dn.className='arrow-btn'+(isLast?' opacity-20 pointer-events-none':''); dn.textContent='▼'; dn.title=isLast?'已是最后一个':'下移';
+				dn.onclick=e=>{e.stopPropagation();if(idx<state.bboxes.length-1){pushUndo();[state.bboxes[idx],state.bboxes[idx+1]]=[state.bboxes[idx+1],state.bboxes[idx]];recalcNextStudentNum();state.selectedBboxIdx=idx+1;renderFront();renderBack();updateStudentList();}};
+				arrowDiv.appendChild(up); arrowDiv.appendChild(dn);
+				chip.appendChild(info); chip.appendChild(arrowDiv); list.appendChild(chip);
+			});
+		}
+
+		// ========== Frame List ==========
+		function buildFrameList(){const l=document.getElementById('frame-list');l.innerHTML='';for(let i=0;i<state.totalFrames;i++){const d=document.createElement('div');d.className='frame-item';d.textContent=`帧 ${String(i+1).padStart(4,'0')}`;d.dataset.index=i;d.onclick=()=>saveAndLoadFrame(i);l.appendChild(d);}}
+		function updateFrameListHighlight(){document.querySelectorAll('.frame-item').forEach((it,i)=>{it.classList.toggle('current',i===state.currentIndex);it.classList.toggle('done',state.annotationsLoaded[i]);});const c=document.querySelector('.frame-item.current');if(c)c.scrollIntoView({block:'nearest'});}
+		function updateHeaderInfo(){document.getElementById('header-info').textContent=`帧 ${state.currentIndex+1} / ${state.totalFrames}`;document.getElementById('front-filename').textContent=`front_${String(state.currentIndex+1).padStart(6,'0')}.jpg`;document.getElementById('back-filename').textContent=`back_${String(state.currentIndex+1).padStart(6,'0')}.jpg`;}
+
+		// ========== Save / Load ==========
+		async function saveCurrentAnnotation(){
+			if(state.bboxes.length===0){
+				try{await fetch('/annotate/api/save_annotation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:state.currentIndex,annotation:null})});}catch(e){}
+				state.annotationsLoaded[state.currentIndex]=false;
+				updateFrameListHighlight();
+				return;
+			}
+			const ann={
+				frame_id:`frame_${String(state.currentIndex+1).padStart(6,'0')}`,
+				image_file:`front_${String(state.currentIndex+1).padStart(6,'0')}.jpg`,
+				annotations:state.bboxes.map(bb=>({
+					student_id:bb.student_id, bbox:[bb.x1,bb.y1,bb.x2,bb.y2],
+					back_bbox:bb.back_bbox?[bb.back_bbox.x1,bb.back_bbox.y1,bb.back_bbox.x2,bb.back_bbox.y2]:null,
+					status:bb.status, posture:bb.posture, bad_reason:bb.bad_reason,
+					pose_keypoints:(bb.pose_keypoints&&Array.isArray(bb.pose_keypoints))?bb.pose_keypoints:null,
+					pose_keypoints_back:(bb.pose_keypoints_back&&Array.isArray(bb.pose_keypoints_back))?bb.pose_keypoints_back:null,
+					note:bb.note||''
+				}))
+			};
+			try{const r=await fetch('/annotate/api/save_annotation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:state.currentIndex,annotation:ann})});
+			const d=await r.json();if(d.success){state.annotations[state.currentIndex]=JSON.parse(JSON.stringify(state.bboxes));state.annotationsLoaded[state.currentIndex]=true;updateFrameListHighlight();showTimedToast('已保存','success');await loadBatchStatus();}else{showTimedToast('保存失败: '+(d.error||'未知错误'),'error');}}catch(e){console.error(e);showTimedToast('保存失败: '+e.message,'error');await loadBatchStatus();}
+		}
+
+		async function loadBatchStatus(){try{const r=await fetch('/annotate/api/batch_status');const d=await r.json();d.statuses.forEach((done,i)=>{state.annotationsLoaded[i]=done;});updateFrameListHighlight();}catch(e){console.error(e);}}
+
+		async function loadAnnotation(index){
+			try{const r=await fetch(`/annotate/api/load_annotation/${index}`);const d=await r.json();
+			if(d.exists&&d.annotation){
+				state.annotations[index]=d.annotation.annotations.map(a=>({
+					student_id:a.student_id, x1:a.bbox[0], y1:a.bbox[1], x2:a.bbox[2], y2:a.bbox[3],
+					back_bbox:a.back_bbox?{x1:a.back_bbox[0],y1:a.back_bbox[1],x2:a.back_bbox[2],y2:a.back_bbox[3]}:null,
+					status:a.status, posture:a.posture, bad_reason:a.bad_reason||[],
+					pose_keypoints:(a.pose_keypoints&&Array.isArray(a.pose_keypoints))?a.pose_keypoints:null,
+					pose_keypoints_back:(a.pose_keypoints_back&&Array.isArray(a.pose_keypoints_back))?a.pose_keypoints_back:null,
+					note:a.note||''
+				}));state.annotationsLoaded[index]=true;
+			}else{state.annotations[index]=[];}}catch(e){console.error(e);state.annotations[index]=[];}
+		}
+
+		async function saveAndLoadFrame(index){if(index===state.currentIndex)return;await saveCurrentAnnotation();await loadAnnotation(index);await loadFrame(index);}
+		async function prevFrame(){if(state.currentIndex<=0)return;await saveAndLoadFrame(state.currentIndex-1);}
+		async function nextFrame(){if(state.currentIndex>=state.totalFrames-1)return;await saveAndLoadFrame(state.currentIndex+1);}
+
+		async function copyPrevAnnotation(){
+			if(state.currentIndex<=0)return; await saveCurrentAnnotation();
+			const pi=state.currentIndex-1; if(!state.annotations[pi]) await loadAnnotation(pi);
+			const pb=state.annotations[pi]; if(!pb||!pb.length){alert('上一帧没有标注数据可复制');return;}
+			pushUndo(); exitKpMode();
+			state.bboxes=JSON.parse(JSON.stringify(pb)); state.selectedBboxIdx=-1; recalcNextStudentNum();
+			closeLabelPanel(); renderFront(); renderBack(); updateStudentList();
+		}
+
+		// ========== Panel Drag ==========
+		(function(){
+			const panel=document.getElementById('label-panel');
+			const header=document.getElementById('panel-header');
+			let dragging=false,startX=0,startY=0,initLeft=0,initTop=0;
+			header.addEventListener('mousedown',e=>{
+				if(e.target.tagName==='BUTTON') return;
+				dragging=true;
+				startX=e.clientX; startY=e.clientY;
+				initLeft=parseInt(panel.style.left)||0;
+				initTop=parseInt(panel.style.top)||0;
+				e.preventDefault();
+			});
+			window.addEventListener('mousemove',e=>{
+				if(!dragging) return;
+				panel.style.left=(initLeft+e.clientX-startX)+'px';
+				panel.style.top=(initTop+e.clientY-startY)+'px';
+			});
+			window.addEventListener('mouseup',()=>{ dragging=false; });
+		})();
+
+		// ========== Keyboard Shortcuts ==========
+		document.addEventListener('keydown',e=>{
+			if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT'||e.target.tagName==='TEXTAREA') return;
+			if(state.kpMode){
+				if(e.key==='Escape'){exitKpMode();return;}
+				if(e.key==='k'||e.key==='K'){exitKpMode();return;}
+				if(e.ctrlKey&&e.key==='z'){e.preventDefault();undoLastKp();return;}
+				if(e.ctrlKey&&e.key==='y'){e.preventDefault();redoLastKp();return;}
+				return;
+			}
+			if(e.ctrlKey&&e.key==='z'){e.preventDefault();undo();}
+			else if(e.ctrlKey&&e.key==='y'){e.preventDefault();redo();}
+			else if(e.key==='ArrowLeft'){e.preventDefault();prevFrame();}
+			else if(e.key==='ArrowRight'){e.preventDefault();nextFrame();}
+			else if(e.key==='c'||e.key==='C'){e.preventDefault();copyPrevAnnotation();}
+			else if(e.key==='r'||e.key==='R'){e.preventDefault();resetFrontView();}
+			else if(e.key==='k'&&!e.shiftKey){e.preventDefault();enterKpMode('front');}
+			else if(e.key==='K'&&e.shiftKey){e.preventDefault();enterKpMode('back');}
+			else if(e.key==='Delete'||e.key==='Backspace'){if(state.selectedBboxIdx>=0){e.preventDefault();deleteSelected();}}
+			else if(e.key==='Escape'){closeLabelPanel();hideCtxMenu();exitKpMode();state.selectedBboxIdx=-1;renderFront();renderBack();updateStudentList();}
+			else if(e.key==='Enter'){/* removed - auto-save */}
+		});
+	</script>
+</body>
+</html>
