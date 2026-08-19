@@ -16,6 +16,18 @@ build/
 tcl_tk_libs/
 release/
 
+# 数据与标注
+坐姿视频标记-20260722/
+yolo_data/
+
+# 训练输出
+training_output/
+runs/
+runs_pose/
+
+# 模型权重
+*.pt
+
 # Python 缓存和虚拟环境
 __pycache__/
 *.py[cod]

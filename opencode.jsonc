@@ -1,0 +1,227 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "provider": {
+        "longcat": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "LongCat",
+            "options": {
+                "baseURL": "https://api.longcat.chat/openai",
+                "apiKey": "ak_2yh1oI4w35EN3jO3915na50L0OX1L"
+            },
+            "models": {
+                "LongCat-2.0": {
+                    "name": "LongCat-2.0",
+                    "options": {
+                        "thinking": {
+                            "type": "disabled"
+                        }
+                    },
+                    "limit": {
+                        "context": 1000000,
+                        "output": 131072
+                    }
+                }
+            }
+        },
+        "sense-nova": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "SenseNova",
+            "options": {
+                "baseURL": "https://token.sensenova.cn/v1",
+                "apiKey": "sk-d4N3b6XYrAKExAUYJGhqS5xjRErFgGeV"
+            },
+            "models": {
+                "deepseek-v4-flash": {
+                    "name": "DeepSeek V4 Flash",
+                    "limit": {
+                        "context": 1048576,
+                        "output": 65536
+                    }
+                },
+                "sensenova-6.7-flash-lite": {
+                    "name": "SenseNova 6.7 Flash-Lite",
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
+                    "limit": {
+                        "context": 262144,
+                        "output": 65536
+                    }
+                },
+                "glm-5.2": {
+                    "name": "GLM-5.2",
+                    "limit": {
+                        "context": 1048576,
+                        "output": 131072
+                    }
+                }
+            }
+        },
+        "sensenova-2": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "SenseNova 2",
+            "options": {
+                "baseURL": "https://token.sensenova.cn/v1",
+                "apiKey": "sk-DZT8fUiMzZc7qn9qFOVbiyiAMAh5aFOj"
+            },
+            "models": {
+                "deepseek-v4-flash": {
+                    "name": "DeepSeek V4 Flash",
+                    "limit": {
+                        "context": 1048576,
+                        "output": 65536
+                    }
+                },
+                "sensenova-6.7-flash-lite": {
+                    "name": "SenseNova 6.7 Flash-Lite",
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
+                    "limit": {
+                        "context": 262144,
+                        "output": 65536
+                    }
+                },
+                "glm-5.2": {
+                    "name": "GLM-5.2",
+                    "limit": {
+                        "context": 1048576,
+                        "output": 131072
+                    }
+                }
+            }
+        },
+        "sensenova-3": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "SenseNova 3",
+            "options": {
+                "baseURL": "https://token.sensenova.cn/v1",
+                "apiKey": "sk-XG84BTVwz3HI9Nno9NpsspGXzmyJMxhk"
+            },
+            "models": {
+                "deepseek-v4-flash": {
+                    "name": "DeepSeek V4 Flash",
+                    "limit": {
+                        "context": 1048576,
+                        "output": 65536
+                    }
+                },
+                "sensenova-6.7-flash-lite": {
+                    "name": "SenseNova 6.7 Flash-Lite",
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
+                    "limit": {
+                        "context": 262144,
+                        "output": 65536
+                    }
+                },
+                "glm-5.2": {
+                    "name": "GLM-5.2",
+                    "limit": {
+                        "context": 1048576,
+                        "output": 131072
+                    }
+                }
+            }
+        },
+        "sensenova-4": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "SenseNova 4",
+            "options": {
+                "baseURL": "https://token.sensenova.cn/v1",
+                "apiKey": "sk-qR7VYNsgKLuwtaAZK92WkIAvegXaLxqy"
+            },
+            "models": {
+                "deepseek-v4-flash": {
+                    "name": "DeepSeek V4 Flash",
+                    "limit": {
+                        "context": 1048576,
+                        "output": 65536
+                    }
+                },
+                "sensenova-6.7-flash-lite": {
+                    "name": "SenseNova 6.7 Flash-Lite",
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
+                    "limit": {
+                        "context": 262144,
+                        "output": 65536
+                    }
+                },
+                "glm-5.2": {
+                    "name": "GLM-5.2",
+                    "limit": {
+                        "context": 1048576,
+                        "output": 131072
+                    }
+                }
+            }
+        },
+        "sensenova-5": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "SenseNova 5",
+            "options": {
+                "baseURL": "https://token.sensenova.cn/v1",
+                "apiKey": "sk-bK7H1VSiRvSpCgkgAxW2DTcwdsBsq1o9"
+            },
+            "models": {
+                "deepseek-v4-flash": {
+                    "name": "DeepSeek V4 Flash",
+                    "limit": {
+                        "context": 1048576,
+                        "output": 65536
+                    }
+                },
+                "sensenova-6.7-flash-lite": {
+                    "name": "SenseNova 6.7 Flash-Lite",
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
+                    "limit": {
+                        "context": 262144,
+                        "output": 65536
+                    }
+                },
+                "glm-5.2": {
+                    "name": "GLM-5.2",
+                    "limit": {
+                        "context": 1048576,
+                        "output": 131072
+                    }
+                }
+            }
+        }
+    }
+}
